@@ -7,10 +7,10 @@ import scipy
 import argparse
 from typing import Dict, Optional
 import sys
+from tqdm import tqdm
 
-sys.path.insert(0, os.path.join(os.path.dirname(
-    os.path.realpath(__file__)), '../'))
-from utils.parse import parse_data, get_path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), '../'))
+from utils.parse import parse_data, get_path, get_unique_days
 
 valid_ranges = {
     "acc_X": (-19.6, 19.6),
@@ -56,7 +56,7 @@ def lombscargle_power_high(nni):
 def get_norm(df):
     """ Returns the mean norm of the x,y,z columns of a dataframe"""
     df = df.dropna()
-    return np.sqrt(df['X'] ** 2 + df['Y'] ** 2 + df['Z'] ** 2).mean()
+    return np.sqrt(df['X']**2 + df['Y']**2 + df['Z']**2).mean()
 
 
 def time_encoding(slice):
@@ -69,6 +69,7 @@ def time_encoding(slice):
     cos_t = np.cos(time_value * (2. * np.pi / (60 * 24)))
     return sin_t, cos_t
 
+
 def extract_hr(df_hrm):
     # where hearRate is out of limits, set it to nan
     df_hrm.loc[df_hrm['heartRate'] <= valid_ranges['heartRate'][0], 'heartRate'] = np.nan
@@ -78,29 +79,76 @@ def extract_hr(df_hrm):
     df_hrm.loc[df_hrm['rRInterval'] <= valid_ranges['rRInterval'][0], 'rRInterval'] = np.nan
     df_hrm.loc[df_hrm['rRInterval'] > valid_ranges['rRInterval'][1], 'rRInterval'] = np.nan
 
-    df_hrm = df_hrm.groupby([df_hrm['day_index'], pd.Grouper(key='DateTime', freq='5Min')]).agg(
-        {'heartRate': np.nanmean, 'rRInterval': [np.nanmean, rmssd, sdnn, lombscargle_power_high]})
+    df_hrm = df_hrm.groupby(pd.Grouper(key='time', freq='5Min')).agg({
+        'heartRate':
+        np.nanmean,
+        'rRInterval': [np.nanmean, rmssd, sdnn, lombscargle_power_high]
+    })
+    df_hrm.columns = df_hrm.columns.map('_'.join)
+
+    # Get time encodings
+    secs = df_hrm.index.to_series().dt.seconds
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    time_value = h * 60 + m
+    df_hrm['sin_t'] = np.sin(time_value * (2 * np.pi / (60 * 24)))
+    df_hrm['cos_t'] = np.cos(time_value * (2 * np.pi / (60 * 24)))
+
     return df_hrm
+
 
 def extract_linacc(df_linacc):
     # where acc is out of limits, set it to nan
-    df_linacc.loc[
-        (df_linacc['X'] < valid_ranges['acc_X'][0]) | (df_linacc['X'] >= valid_ranges['acc_X'][1]), 'X'] = np.nan
-    df_linacc.loc[
-        (df_linacc['Y'] < valid_ranges['acc_Y'][0]) | (df_linacc['Y'] >= valid_ranges['acc_Y'][1]), 'Y'] = np.nan
-    df_linacc.loc[
-        (df_linacc['Z'] < valid_ranges['acc_Z'][0]) | (df_linacc['Z'] >= valid_ranges['acc_Z'][1]), 'Z'] = np.nan
+    df_linacc.loc[(df_linacc['X'] < valid_ranges['acc_X'][0]) | (df_linacc['X'] >= valid_ranges['acc_X'][1]),
+                  'X'] = np.nan
+    df_linacc.loc[(df_linacc['Y'] < valid_ranges['acc_Y'][0]) | (df_linacc['Y'] >= valid_ranges['acc_Y'][1]),
+                  'Y'] = np.nan
+    df_linacc.loc[(df_linacc['Z'] < valid_ranges['acc_Z'][0]) | (df_linacc['Z'] >= valid_ranges['acc_Z'][1]),
+                  'Z'] = np.nan
 
-    df_linacc = df_linacc.groupby([df_linacc['day_index'], pd.Grouper(key='DateTime', freq='5Min')]).apply(get_norm)
+    # Calculate Norm for each row / drop unecessary columns
+    df_linacc['Norm'] = np.sqrt(df_linacc['X']**2 + df_linacc['Y']**2 + df_linacc['Z']**2)
+    df_linacc.drop(columns=['X', 'Y', 'Z', 'day_index'], inplace=True)
 
-    return df_linacc
+    # Calculate 5Min Norm aggregations
+    norm_aggrs = df_linacc.groupby(pd.Grouper(key='time', freq='5Min'))['Norm'].agg(acc_mean='mean', acc_std='std')
+
+    # Calculate deltas
+    deltas = df_linacc.groupby(pd.Grouper(key='time', freq='30S'))['Norm'].mean()
+    deltas = deltas.diff() / deltas.index.to_series().diff().dt.total_seconds()
+    deltas = deltas.resample("5Min").agg(acc_delta_mean='mean', acc_delta_std='std')
+
+    return norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+
 
 def extract_sleep(df):
     return df
+
+
 def extract_gyr(df):
-    return df
+    # where acc is out of limits, set it to nan
+    df.loc[(df['X'] < valid_ranges['acc_X'][0]) | (df['X'] >= valid_ranges['acc_X'][1]), 'X'] = np.nan
+    df.loc[(df['Y'] < valid_ranges['acc_Y'][0]) | (df['Y'] >= valid_ranges['acc_Y'][1]), 'Y'] = np.nan
+    df.loc[(df['Z'] < valid_ranges['acc_Z'][0]) | (df['Z'] >= valid_ranges['acc_Z'][1]), 'Z'] = np.nan
+
+    # Calculate Norm for each row / drop unecessary columns
+    df['Norm'] = np.sqrt(df['X']**2 + df['Y']**2 + df['Z']**2)
+    df.drop(columns=['X', 'Y', 'Z', 'day_index'], inplace=True)
+
+    # Calculate 5Min Norm aggregations
+    norm_aggrs = df.groupby(pd.Grouper(key='time', freq='5Min'))['Norm'].agg(gyr_mean='mean', gyr_std='std')
+
+    # Calculate deltas
+    deltas = df.groupby(pd.Grouper(key='time', freq='30S'))['Norm'].mean()
+    deltas = deltas.diff() / deltas.index.to_series().diff().dt.total_seconds()
+    deltas = deltas.resample("5Min").agg(gyr_delta_mean='mean', gyr_delta_std='std')
+
+    return norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+
+
 def extract_step(df):
     return df
+
 
 FEATURE_FUNC = {
     'gyr': extract_gyr,
@@ -110,6 +158,27 @@ FEATURE_FUNC = {
     'step': extract_step
 }
 
+
+def extract_day_features(df_dicts: Dict[str, pd.DataFrame]):
+    """Extract features for a specific day
+    
+    Args:
+        df_dicts (Dict[str, pd.DataFrame]): DataFrames filtered on specific day
+    
+    Returns:
+        np.ndarray
+    """
+    features = []
+    for dtype, df in df_dicts.items():
+        feature_extractor = FEATURE_FUNC[dtype]
+        df = feature_extractor(df)
+        features.append(df.to_numpy())
+    features = np.concatenate(features, axis=1)
+
+    # Drop rows with NaN values
+    return features[~np.isnan(features).any(axis=1)]
+
+
 # function that does feature extraction for a patient
 def extract_user_features(track: Optional[int] = None,
                           patient: Optional[int] = None,
@@ -117,54 +186,33 @@ def extract_user_features(track: Optional[int] = None,
                           num: Optional[int] = None,
                           dtypes: Optional[list] = None):
 
-
     if 'all' in dtypes:
-       dtypes = ['gyr', 'hrm', 'linacc', 'sleep', 'step']
+        dtypes = ['gyr', 'hrm', 'linacc', 'sleep', 'step']
 
-    all_df = []
-    for dtype in dtypes:
-        print(
-            'Extracting {} related features for track {}, patient {} and mode {}_{}'.format(dtype, track, patient, mode,
-                                                                                            num))
-        df = parse_data(track, patient, mode, num, dtype)
+    # Process each dataframe by filtering for each day
+    # Get unique days
+    days = get_unique_days(track, patient, mode, num)
 
-        # Convert Timedelta to datetime.time
-        start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
-        df['DateTime'] = df['time'].apply(
-            lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
-        feature_extractor = FEATURE_FUNC[dtype]
-        result_df = feature_extractor(df)
-        all_df.append(result_df)
+    # Parse all dataframes
+    full_dfs = {dtype: parse_data(track, patient, mode, num, dtype) for dtype in dtypes}
 
-    # combine all
-    df = pd.concat(all_df, axis=1)
-    df = df.reset_index()
-
-    # create positional encoding features
-    h = df['DateTime'].dt.hour
-    m = df['DateTime'].dt.minute
-    time_value = h * 60 + m
-    df['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
-    df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
-
-
+    # Create directory
     path_to_save = get_path(track, patient, mode, num) + "/features"
     if not os.path.exists(path_to_save):
         os.makedirs(path_to_save)
-    # Get unique values from the 'day_index' column
-    unique_days = df['day_index'].unique()
 
-    # Split DataFrame based on unique values in 'day_index' column and save to .npz files
-    for day in unique_days:
-        subset_df = df[df['day_index'] == day]  # Subset DataFrame for each unique day
-        # Convert subset DataFrame to a NumPy array
-        subset_array = subset_df.drop(columns=['DateTime', 'day_index']).to_numpy()
-        out_file = path_to_save + f"/{day}.npz"
-        # Save the subset array to a .npz file with the category name
-        np.savez(out_file, data=subset_array)
+    day = 0
+    p_bar = tqdm(days,
+                 desc=f'Extracting features for each day (Track: {track} | Patient: {patient} | Mode: {mode})',
+                 leave=False,
+                 postfix={"Day": f"{day} | {days[-1]}"})
 
-    print('Saved features for {} features for track {}, patient {} and mode {}_{}'.format(dtypes, track, patient, mode,
-                                                                                            num))
+    for day in p_bar:
+        fil_dfs = {dtype: full_dfs[dtype][full_dfs[dtype]['day_index'] == day].copy(deep=True) for dtype in dtypes}
+        day_features = extract_day_features(fil_dfs)
+        out_file = path_to_save + f"/day_{day:02}"
+        np.save(out_file, day_features)
+        p_bar.set_postfix({"Day": f"{day} | {days[-1]}"})
 
 
 if __name__ == "__main__":
@@ -178,4 +226,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     extract_user_features(args.track, args.patient, args.mode, args.num, args.dtype)
-

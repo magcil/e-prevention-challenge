@@ -105,3 +105,8 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
     for m in modes:
         num = int(m[-1])
         yield pd.read_parquet(get_path(track, patient, m, num, dtype))
+
+
+def get_unique_days(track: int, patient: int, mode: str, num: int):
+    df = parse_data(track, patient, mode, num, "hrm")
+    return df['day_index'].unique()
