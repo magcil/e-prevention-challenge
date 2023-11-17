@@ -125,7 +125,7 @@ def extract_linacc(df_linacc):
 
     norm_aggrs = norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
 
-    return norm_aggrs.reset_index().drop(columns='time')
+    return norm_aggrs.reset_index(drop=True)
 
 
 def extract_sleep(df):
@@ -152,7 +152,7 @@ def extract_gyr(df):
 
     norm_aggrs = norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
 
-    return norm_aggrs.reset_index().drop(columns='time')
+    return norm_aggrs.reset_index(drop=True)
 
 
 def extract_step(df):
