@@ -2,6 +2,7 @@ import os
 from typing import Dict, Optional, List
 import glob
 
+import numpy as np
 import pandas as pd
 
 from utils import DATA_PATH, DATA_FILES
@@ -108,10 +109,12 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
 
 
 def get_unique_days(track: int, patient: int, mode: str, num: int):
-    df = parse_data(track, patient, mode, num, "hrm")
-    return df['day_index'].unique()
+    df_1 = parse_data(track, patient, mode, num, "hrm")
+    df_2 = parse_data(track, patient, mode, num, "gyr")
+
+    return np.intersect1d(df_1['day_index'].unique(), df_2['day_index'].unique(), assume_unique=True)
 
 
-def parse_dtypes(track:int, patient:int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
+def parse_dtypes(track: int, patient: int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
 
     return {dtype: parse_data(track, patient, mode, num, dtype) for dtype in dtypes}
