@@ -78,10 +78,39 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    neg = pd.read_parquet('data/track_01/P1/val_0/features/day_00.parquet', engine='fastparquet')
-    pos = pd.read_parquet('data/track_01/P1/val_1/features/day_00.parquet', engine='fastparquet')
+    all_negs = []
+    all_pos = []
 
-    neg = np.array([neg["acc_mean"], neg["rRInterval_nanmean"] ]).T
-    pos = np.array([pos["acc_mean"], pos["rRInterval_nanmean"] ]).T
+    # list all files with .parquet extension in folder:
+    for f in os.listdir('data/track_01/P1/val_0/features/'):
+        neg = pd.read_parquet(os.path.join('data/track_01/P1/val_0/features/', f), engine='fastparquet')
+        neg = neg.loc[:, neg.columns != "DateTime"]
+        cols = neg.columns
+        neg = np.array(neg)
+        all_negs.append(neg)
+        print(neg.shape)
+    all_negs = np.concatenate(all_negs, axis=0)
+    print(all_negs.shape)
 
-    plot_feature_histograms([neg, pos], ["1", "2"], ["neg", "pos"], n_columns=5)
+    # list all files with .parquet extension in folder:
+    for f in os.listdir('data/track_01/P1/val_1/features/'):
+        pos = pd.read_parquet(os.path.join('data/track_01/P1/val_1/features/', f), engine='fastparquet')
+        pos = pos.loc[:, pos.columns != "DateTime"]
+        pos = np.array(pos)
+        all_pos.append(pos)
+        print(neg.shape)
+    all_pos = np.concatenate(all_pos, axis=0)
+
+    print(cols)
+    print(all_negs.shape)
+    print(all_pos.shape)
+
+
+    print(all_negs.mean(axis=0))
+    print(all_pos.mean(axis=0))
+#    pos = pd.read_parquet('data/track_01/P1/val_1/features/day_00.parquet', engine='fastparquet')
+#    pos = pos.loc[:, pos.columns != "DateTime"]
+#    cols = neg.columns
+#    pos = np.array(pos)
+#    print(pos.shape)
+    plot_feature_histograms([neg, pos], cols, ["neg", "pos"], n_columns=5)
