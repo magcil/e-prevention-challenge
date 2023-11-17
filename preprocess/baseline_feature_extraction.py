@@ -59,6 +59,11 @@ def get_norm(df):
     return np.sqrt(df['X']**2 + df['Y']**2 + df['Z']**2).mean()
 
 
+def get_std(df):
+    df = df.dropna()
+    return np.sqrt(df['X']**2 + df['Y']**2 + df['Z']**2).std()
+
+
 def time_encoding(slice):
     # Compute the sin and cos of timestamp (we have 12*24=288 5-minutes per day)
     mean_timestamp = slice['timecol'].astype('datetime64').mean()
@@ -90,14 +95,6 @@ def extract_hr(df_hrm):
         'rRInterval': [np.nanmean, rmssd, sdnn, lombscargle_power_high]
     })
     df_hrm.columns = df_hrm.columns.map('_'.join)
-    df_hrm = df_hrm.reset_index()
-
-    # Create time encodings
-    h = df_hrm['DateTime'].dt.hour
-    m = df_hrm['DateTime'].dt.minute
-    time_value = h * 60 + m
-    df_hrm['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
-    df_hrm['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
     return df_hrm
 
@@ -111,21 +108,25 @@ def extract_linacc(df_linacc):
     df_linacc.loc[(df_linacc['Z'] < valid_ranges['acc_Z'][0]) | (df_linacc['Z'] >= valid_ranges['acc_Z'][1]),
                   'Z'] = np.nan
 
-    # Calculate Norm for each row / drop unecessary columns
-    df_linacc['Norm'] = np.sqrt(df_linacc['X']**2 + df_linacc['Y']**2 + df_linacc['Z']**2)
-    df_linacc.drop(columns=['X', 'Y', 'Z', 'day_index'], inplace=True)
+    # Convert Timedelta to datetime.time
+    start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
+    df_linacc['DateTime'] = df_linacc['time'].apply(
+        lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
 
     # Calculate 5Min Norm aggregations
-    norm_aggrs = df_linacc.groupby(pd.Grouper(key='time', freq='5Min'))['Norm'].agg(acc_mean='mean', acc_std='std')
+    norm_aggrs = df_linacc.groupby(pd.Grouper(key='DateTime', freq='5Min')).apply(get_norm)
+    norm_stds = df_linacc.groupby(pd.Grouper(key='DateTime', freq='5Min')).apply(get_std)
 
     # Calculate deltas
-    deltas = df_linacc.groupby(pd.Grouper(key='time', freq='30S'))['Norm'].mean()
+    deltas = df_linacc.groupby(pd.Grouper(key='DateTime', freq='30S')).apply(get_norm)
     deltas = deltas.diff() / deltas.index.to_series().diff().dt.total_seconds()
-    deltas = deltas.resample("5Min").agg(acc_delta_mean='mean', acc_delta_std='std')
+    deltas = deltas.resample("5Min").agg(['mean', 'std'])
 
-    norm_aggrs = norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+    # Merge all and rename
+    df_linacc = pd.concat([norm_aggrs, norm_stds, deltas], axis=1)
+    df_linacc.columns = ['acc_mean', 'acc_std', 'acc_delta_mean', 'acc_delta_std']
 
-    return norm_aggrs.reset_index(drop=True)
+    return df_linacc
 
 
 def extract_sleep(df):
@@ -138,21 +139,24 @@ def extract_gyr(df):
     df.loc[(df['Y'] < valid_ranges['acc_Y'][0]) | (df['Y'] >= valid_ranges['acc_Y'][1]), 'Y'] = np.nan
     df.loc[(df['Z'] < valid_ranges['acc_Z'][0]) | (df['Z'] >= valid_ranges['acc_Z'][1]), 'Z'] = np.nan
 
-    # Calculate Norm for each row / drop unecessary columns
-    df['Norm'] = np.sqrt(df['X']**2 + df['Y']**2 + df['Z']**2)
-    df.drop(columns=['X', 'Y', 'Z', 'day_index'], inplace=True)
+    # Convert Timedelta to datetime.time
+    start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
+    df['DateTime'] = df['time'].apply(lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
 
     # Calculate 5Min Norm aggregations
-    norm_aggrs = df.groupby(pd.Grouper(key='time', freq='5Min'))['Norm'].agg(gyr_mean='mean', gyr_std='std')
+    norm_aggrs = df.groupby(pd.Grouper(key='DateTime', freq='5Min')).apply(get_norm)
+    norm_stds = df.groupby(pd.Grouper(key='DateTime', freq='5Min')).apply(get_std)
 
     # Calculate deltas
-    deltas = df.groupby(pd.Grouper(key='time', freq='30S'))['Norm'].mean()
+    deltas = df.groupby(pd.Grouper(key='DateTime', freq='30S')).apply(get_norm)
     deltas = deltas.diff() / deltas.index.to_series().diff().dt.total_seconds()
-    deltas = deltas.resample("5Min").agg(gyr_delta_mean='mean', gyr_delta_std='std')
+    deltas = deltas.resample("5Min").agg(['mean', 'std'])
 
-    norm_aggrs = norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+    # Merge all and rename
+    df = pd.concat([norm_aggrs, norm_stds, deltas], axis=1)
+    df.columns = ['gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std']
 
-    return norm_aggrs.reset_index(drop=True)
+    return df
 
 
 def extract_step(df):
@@ -187,7 +191,15 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
         all_df.append(df)
 
     # Combine all
-    all_df = pd.concat(all_df, axis=1)
+    all_df = pd.concat(all_df, axis=1, join='inner')
+    all_df = all_df.reset_index()
+
+    # Create time encodings
+    h = all_df['DateTime'].dt.hour
+    m = all_df['DateTime'].dt.minute
+    time_value = h * 60 + m
+    all_df['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
+    all_df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
     # Drop Nan Values
     return all_df.dropna()
