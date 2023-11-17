@@ -5,7 +5,7 @@ import numpy as np
 import pyhrv
 import scipy
 import argparse
-from typing import Dict, Optional
+from typing import Dict, Optional, Union, Tuple
 import sys
 from tqdm import tqdm
 
@@ -79,20 +79,25 @@ def extract_hr(df_hrm):
     df_hrm.loc[df_hrm['rRInterval'] <= valid_ranges['rRInterval'][0], 'rRInterval'] = np.nan
     df_hrm.loc[df_hrm['rRInterval'] > valid_ranges['rRInterval'][1], 'rRInterval'] = np.nan
 
-    df_hrm = df_hrm.groupby(pd.Grouper(key='time', freq='5Min')).agg({
+    # Convert Timedelta to datetime.time
+    start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
+    df_hrm['DateTime'] = df_hrm['time'].apply(
+        lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
+
+    df_hrm = df_hrm.groupby(pd.Grouper(key='DateTime', freq='5Min')).agg({
         'heartRate':
         np.nanmean,
         'rRInterval': [np.nanmean, rmssd, sdnn, lombscargle_power_high]
     })
     df_hrm.columns = df_hrm.columns.map('_'.join)
+    df_hrm = df_hrm.reset_index()
 
-    # Get time encodings
-    secs = df_hrm.index.to_series().dt.seconds
-    h = secs // 3600
-    m = (secs % 3600) // 60
+    # Create time encodings
+    h = df_hrm['DateTime'].dt.hour
+    m = df_hrm['DateTime'].dt.minute
     time_value = h * 60 + m
-    df_hrm['sin_t'] = np.sin(time_value * (2 * np.pi / (60 * 24)))
-    df_hrm['cos_t'] = np.cos(time_value * (2 * np.pi / (60 * 24)))
+    df_hrm['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
+    df_hrm['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
     return df_hrm
 
@@ -118,7 +123,9 @@ def extract_linacc(df_linacc):
     deltas = deltas.diff() / deltas.index.to_series().diff().dt.total_seconds()
     deltas = deltas.resample("5Min").agg(acc_delta_mean='mean', acc_delta_std='std')
 
-    return norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+    norm_aggrs = norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+
+    return norm_aggrs.reset_index().drop(columns='time')
 
 
 def extract_sleep(df):
@@ -143,7 +150,9 @@ def extract_gyr(df):
     deltas = deltas.diff() / deltas.index.to_series().diff().dt.total_seconds()
     deltas = deltas.resample("5Min").agg(gyr_delta_mean='mean', gyr_delta_std='std')
 
-    return norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+    norm_aggrs = norm_aggrs.merge(deltas, left_index=True, right_index=True, how='inner')
+
+    return norm_aggrs.reset_index().drop(columns='time')
 
 
 def extract_step(df):
@@ -159,24 +168,29 @@ FEATURE_FUNC = {
 }
 
 
-def extract_day_features(df_dicts: Dict[str, pd.DataFrame]):
-    """Extract features for a specific day
+def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
+    """Extract features for a specific day.
     
     Args:
-        df_dicts (Dict[str, pd.DataFrame]): DataFrames filtered on specific day
+        df_dicts (Dict[str, pd.DataFrame]): DataFrames containing raw data
+        day_index (int): The index of day to filter data
     
     Returns:
-        np.ndarray
+        pd.DataFrame: Features of a specific day
     """
-    features = []
-    for dtype, df in df_dicts.items():
+    dtypes = df_dicts.keys()
+    fil_dfs = {dtype: df_dicts[dtype][df_dicts[dtype]['day_index'] == day_index].copy(deep=True) for dtype in dtypes}
+    all_df = []
+    for dtype, df in fil_dfs.items():
         feature_extractor = FEATURE_FUNC[dtype]
         df = feature_extractor(df)
-        features.append(df.to_numpy())
-    features = np.concatenate(features, axis=1)
+        all_df.append(df)
 
-    # Drop rows with NaN values
-    return features[~np.isnan(features).any(axis=1)]
+    # Combine all
+    all_df = pd.concat(all_df, axis=1)
+
+    # Drop Nan Values
+    return all_df.dropna()
 
 
 # function that does feature extraction for a patient
@@ -208,10 +222,9 @@ def extract_user_features(track: Optional[int] = None,
                  postfix={"Day": f"{day} | {days[-1]}"})
 
     for day in p_bar:
-        fil_dfs = {dtype: full_dfs[dtype][full_dfs[dtype]['day_index'] == day].copy(deep=True) for dtype in dtypes}
-        day_features = extract_day_features(fil_dfs)
-        out_file = path_to_save + f"/day_{day:02}"
-        np.save(out_file, day_features)
+        day_features = extract_day_features(full_dfs, day_index=day)
+        out_file = path_to_save + f"/day_{day:02}.parquet"
+        day_features.to_parquet(out_file, engine='fastparquet')
         p_bar.set_postfix({"Day": f"{day} | {days[-1]}"})
 
 

@@ -1,5 +1,5 @@
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import glob
 
 import pandas as pd
@@ -110,3 +110,8 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
 def get_unique_days(track: int, patient: int, mode: str, num: int):
     df = parse_data(track, patient, mode, num, "hrm")
     return df['day_index'].unique()
+
+
+def parse_dtypes(track:int, patient:int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
+
+    return {dtype: parse_data(track, patient, mode, num, dtype) for dtype in dtypes}
