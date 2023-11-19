@@ -109,6 +109,15 @@ def svm_train_evaluate(X, y, k_folds, C=1, use_regressor=False):
 
     return cm, f1, acc
 
+
+def f_importances(coef, names):
+    imp = coef
+    imp,names = zip(*sorted(zip(imp,names)))
+    plt.barh(range(len(names)), imp, align='center')
+    plt.yticks(range(len(names)), names)
+    plt.show()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--track', type=int, required=True, choices=[1, 2], help='track 1 or 2')
@@ -122,33 +131,57 @@ if __name__ == "__main__":
     all_negs = []
     all_pos = []
 
+    all_pos_train = []
+    all_pos_test = []
+    all_neg_train = []
+    all_neg_test = []
+
+    n_neg = len(os.listdir('data/track_01/P1/val_0/features/'))
+    n_pos = len(os.listdir('data/track_01/P1/val_1/features/'))
+
+    n_neg_train = int(n_neg * 0.8)
+    n_pos_train = int(n_pos * 0.8)
+
     # list all files with .parquet extension in folder:
-    for f in os.listdir('data/track_01/P1/val_0/features/'):
+    for i_f, f in enumerate(os.listdir('data/track_01/P1/val_0/features/')):
         neg = pd.read_parquet(os.path.join('data/track_01/P1/val_0/features/', f), engine='fastparquet')
-        neg = neg.loc[:, neg.columns != "DateTime"]
+        neg = neg[neg.columns.difference(['cos_t', 'sin_t'])]
+        neg = neg.loc[:, (neg.columns != "DateTime")]
         cols = neg.columns
         neg = np.array(neg)
         all_negs.append(neg)
-        print(neg.shape)
+        if i_f < n_neg_train:
+            all_neg_train.append(neg)
+        else:
+            all_neg_test.append(neg)
     all_negs = np.concatenate(all_negs, axis=0)
+    all_neg_train = np.concatenate(all_neg_train, axis=0)
+    all_neg_test = np.concatenate(all_neg_test, axis=0)
+
+    print(all_neg_train.shape)
+    print(all_neg_test.shape)    
     print(all_negs.shape)
 
     # list all files with .parquet extension in folder:
-    for f in os.listdir('data/track_01/P1/val_1/features/'):
+    for i_f, f in enumerate(os.listdir('data/track_01/P1/val_1/features/')):
         pos = pd.read_parquet(os.path.join('data/track_01/P1/val_1/features/', f), engine='fastparquet')
+        pos = pos[pos.columns.difference(['cos_t', 'sin_t'])]
         pos = pos.loc[:, pos.columns != "DateTime"]
         pos = np.array(pos)
         all_pos.append(pos)
-        print(neg.shape)
+        if i_f < n_pos_train:
+            all_pos_train.append(pos)
+        else:
+            all_pos_test.append(pos)
     all_pos = np.concatenate(all_pos, axis=0)
+    all_pos_train = np.concatenate(all_pos_train, axis=0)
+    all_pos_test = np.concatenate(all_pos_test, axis=0)
 
-    print(cols)
-    print(all_negs.shape)
+
+    print(all_pos_train.shape)
+    print(all_pos_test.shape)    
     print(all_pos.shape)
 
-
-    print(all_negs.mean(axis=0))
-    print(all_pos.mean(axis=0))
 #    pos = pd.read_parquet('data/track_01/P1/val_1/features/day_00.parquet', engine='fastparquet')
 #    pos = pos.loc[:, pos.columns != "DateTime"]
 #    cols = neg.columns
@@ -157,10 +190,27 @@ if __name__ == "__main__":
     plot_feature_histograms([neg, pos], cols, ["neg", "pos"], n_columns=5)
 
 
-    X = np.concatenate((all_negs, all_pos), axis=0)
-    print(X.shape)
-    print(np.zeros(all_negs.shape[0]))
-    y = np.concatenate((np.zeros(all_negs.shape[0]), np.ones(all_pos.shape[0])))
+    x_train = np.concatenate((all_neg_train, all_pos_train), axis=0)
+    x_test = np.concatenate((all_neg_test, all_pos_test), axis=0)
+    y_train = np.concatenate((np.zeros(all_neg_train.shape[0]), np.ones(all_pos_train.shape[0])), axis=0)
+    y_test = np.concatenate((np.zeros(all_neg_test.shape[0]), np.ones(all_pos_test.shape[0])), axis=0)
 
-    cm, f1, acc = svm_train_evaluate(X, y, 5 , C=1, use_regressor=False)
+    mean, std = x_train.mean(axis=0), np.std(x_train, axis=0)
+    x_train = (x_train - mean) / (std)  
+    x_test = (x_test - mean) / (std)
+    cl = SVC(kernel='rbf', C=1, gamma="auto")
+    cl.fit(x_train, y_train)
+    y_pred = cl.predict(x_test)
+
+    cm = confusion_matrix(y_pred=y_pred, y_true=y_test)
+    f1 = f1_score(y_pred=y_pred, y_true=y_test, average='micro')
+    acc = accuracy_score(y_pred=y_pred, y_true=y_test)
+
     print(cm, f1)
+
+
+    features_names = cols
+    svm = SVC(kernel='linear')
+    svm.fit(x_train, y_train)
+    print(svm.coef_)
+    f_importances(svm.coef_[0], features_names)
