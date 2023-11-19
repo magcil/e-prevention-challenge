@@ -71,45 +71,6 @@ def get_color_combinations(n_classes):
     return clr
 
 
-def find_nearest(x,A):
-    '''
-    returns the closest element in an array
-    '''
-    return A[(np.abs(A-x)).argmin()]
-
-
-def svm_train_evaluate(X, y, k_folds, C=1, use_regressor=False):
-    '''
-    :param X: Feature matrix
-    :param y: Labels matrix
-    :param k_folds: Number of folds
-    :param C: SVM C param
-    :param use_regressor: use svm regression for training (not nominal classes)
-    :return: confusion matrix, average f1 measure and overall accuracy
-    '''
-    #classes 
-    Y_classes=list(set(y))
-    # normalize
-    mean, std = X.mean(axis=0), np.std(X, axis=0)
-    X = (X - mean) / (std)
-    x_train = X[:int(X.shape[0] * 0.8)] 
-    y_train = y[:int(X.shape[0] * 0.8)]
-    x_test = X[int(X.shape[0] * 0.8):]
-    y_test = y[int(X.shape[0] * 0.8):]
-
-
-    # k-fold evaluation:
-    cl = SVC(kernel='rbf', C=C, gamma="auto")
-    cl.fit(x_train, y_train)
-    y_pred = cl.predict(x_test)
-
-    cm = confusion_matrix(y_pred=y_pred, y_true=y_test)
-    f1 = f1_score(y_pred=y_pred, y_true=y_test, average='micro')
-    acc = accuracy_score(y_pred=y_pred, y_true=y_test)
-
-    return cm, f1, acc
-
-
 def f_importances(coef, names):
     imp = coef
     imp,names = zip(*sorted(zip(imp,names)))
