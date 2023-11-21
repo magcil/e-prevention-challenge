@@ -135,9 +135,9 @@ def extract_sleep(df):
 
 def extract_gyr(df):
     # where acc is out of limits, set it to nan
-    df.loc[(df['X'] < valid_ranges['acc_X'][0]) | (df['X'] >= valid_ranges['acc_X'][1]), 'X'] = np.nan
-    df.loc[(df['Y'] < valid_ranges['acc_Y'][0]) | (df['Y'] >= valid_ranges['acc_Y'][1]), 'Y'] = np.nan
-    df.loc[(df['Z'] < valid_ranges['acc_Z'][0]) | (df['Z'] >= valid_ranges['acc_Z'][1]), 'Z'] = np.nan
+    df.loc[(df['X'] < valid_ranges['gyr_X'][0]) | (df['X'] >= valid_ranges['gyr_X'][1]), 'X'] = np.nan
+    df.loc[(df['Y'] < valid_ranges['gyr_Y'][0]) | (df['Y'] >= valid_ranges['gyr_Y'][1]), 'Y'] = np.nan
+    df.loc[(df['Z'] < valid_ranges['gyr_Z'][0]) | (df['Z'] >= valid_ranges['gyr_Z'][1]), 'Z'] = np.nan
 
     # Convert Timedelta to datetime.time
     start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
