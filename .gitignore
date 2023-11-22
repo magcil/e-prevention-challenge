@@ -162,5 +162,6 @@ cython_debug/
 *.parquet
 *.csv
 .vscode
+*.pt
 
 *.xlsx
