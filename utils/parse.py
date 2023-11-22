@@ -1,7 +1,8 @@
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import glob
 
+import numpy as np
 import pandas as pd
 
 from utils import DATA_PATH, DATA_FILES
@@ -105,3 +106,30 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
     for m in modes:
         num = int(m[-1])
         yield pd.read_parquet(get_path(track, patient, m, num, dtype))
+
+
+def get_unique_days(track: int, patient: int, mode: str, num: int):
+    df_1 = parse_data(track, patient, mode, num, "hrm")
+    df_2 = parse_data(track, patient, mode, num, "gyr")
+
+    return np.intersect1d(df_1['day_index'].unique(), df_2['day_index'].unique(), assume_unique=True)
+
+
+def parse_dtypes(track: int, patient: int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
+
+    return {dtype: parse_data(track, patient, mode, num, dtype) for dtype in dtypes}
+
+
+def get_features(track_id: int, patient_id: Optional[int] = None, mode: Optional[str] = None, extension=".parquet"):
+    """Get all features for the specified path"""
+    path = get_path(track=track_id, patient=patient_id, mode=mode)
+    subdirs = [dir[0] for dir in os.walk(path)]
+    tree = []
+
+    for dir in subdirs:
+        files = next(os.walk(dir))[2]
+        for _file in files:
+            if _file.endswith(extension) and _file.startswith("day"):
+                tree.append(os.path.join(dir, _file))
+                print(tree[-1])
+    return tree
