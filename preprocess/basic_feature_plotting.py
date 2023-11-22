@@ -106,7 +106,7 @@ if __name__ == "__main__":
     # list all files with .parquet extension in folder:
     for i_f, f in enumerate(os.listdir('data/track_01/P1/val_0/features/')):
         neg = pd.read_parquet(os.path.join('data/track_01/P1/val_0/features/', f), engine='fastparquet')
-        neg = neg[neg.columns.difference(['cos_t', 'sin_t'])]
+        #neg = neg[neg.columns.difference(['cos_t', 'sin_t'])]
         neg = neg.loc[:, (neg.columns != "DateTime")]
         cols = neg.columns
         neg = np.array(neg)
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     # list all files with .parquet extension in folder:
     for i_f, f in enumerate(os.listdir('data/track_01/P1/val_1/features/')):
         pos = pd.read_parquet(os.path.join('data/track_01/P1/val_1/features/', f), engine='fastparquet')
-        pos = pos[pos.columns.difference(['cos_t', 'sin_t'])]
+        #pos = pos[pos.columns.difference(['cos_t', 'sin_t'])]
         pos = pos.loc[:, pos.columns != "DateTime"]
         pos = np.array(pos)
         all_pos.append(pos)
