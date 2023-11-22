@@ -148,7 +148,7 @@ if __name__ == "__main__":
 #    cols = neg.columns
 #    pos = np.array(pos)
 #    print(pos.shape)
-    plot_feature_histograms([neg, pos], cols, ["neg", "pos"], n_columns=5)
+    plot_feature_histograms([all_negs, all_pos], cols, ["neg", "pos"], n_columns=5)
 
 
     x_train = np.concatenate((all_neg_train, all_pos_train), axis=0)
