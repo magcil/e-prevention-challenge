@@ -16,7 +16,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--track', type=int, choices=[1, 2], help='The track number.')
     parser.add_argument('--dtypes',
-                        type='+',
+                        nargs='+',
                         default=['hrm', 'gyr', 'linacc'],
                         help='List of data types to be used for extraction.')
     
