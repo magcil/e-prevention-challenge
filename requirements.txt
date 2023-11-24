@@ -59,3 +59,4 @@ traitlets==5.13.0
 tzdata==2023.3
 wcwidth==0.2.9
 tqdm==4.66.1
+plotly==5.18.0
