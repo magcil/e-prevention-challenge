@@ -9,16 +9,18 @@ from torchmetrics.regression import MeanSquaredLogError
 import sklearn.metrics
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
+import torch.optim.lr_scheduler as lr_scheduler
+import matplotlib.pyplot as plt
 import argparse
+import seaborn as sns
 
-
-BEST_MODEL_PATH = "/home/magcil/repos/e-prevention-challenge/checkpoints/conv_autoencoder.pt"
 
 class RelapseDetection():
 
-    def __init__(self, train_feats_path, test_feats_path, batch_size, patience, lr, epochs, window_size):
+    def __init__(self, train_feats_path, test_feats_path, checkpoint_path, batch_size, patience, lr, epochs, window_size):
         self.train_features_path = train_feats_path
         self.test_features_path = test_feats_path
+        self.BEST_MODEL_PATH = checkpoint_path
         self.batch_size = batch_size
         self.early_stopping_patience = patience
         self.lr = float(lr)
@@ -30,7 +32,6 @@ class RelapseDetection():
 
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        device='cpu'
         return device
     
     # add a collate fn which ignores None
@@ -48,8 +49,8 @@ class RelapseDetection():
 
         # and start the training loop!
         
-        for _, data in tqdm(enumerate(loader, 0)):
-            feature_vector = data[0]
+        for _, data in enumerate(loader, 0):
+            feature_vector = data
 
             batch_counter += 1
 
@@ -57,8 +58,6 @@ class RelapseDetection():
 
             optimizer.zero_grad()
             output = self.model(feature_vector)
-            #print('output:', output)
-            #print('output shape:', output.shape)
 
             loss = criterion(output, feature_vector)
             loss.backward()
@@ -67,20 +66,24 @@ class RelapseDetection():
             running_loss += loss.item()
         
         epoch_loss = running_loss / batch_counter
+        self.scheduler.step()
+
+        if (epoch%100 == 0):
+            print(f'Learning rate at epoch {epoch}: {optimizer.param_groups[0]["lr"]}')
 
         print('Epoch [{}], Training Loss: {:.4f}'.format(epoch, epoch_loss))
 
     
     def validate(self, model, criterion, loader, device, epoch):
 
-        self.model.eval() # switch into training mode
+        self.model.eval() # switch into evaluation mode
         running_loss = 0 # define loss
         batch_counter = 0 # define batch counter
 
         # and start the training loop!
         
-        for _, data in tqdm(enumerate(loader, 0)):
-            feature_vector = data[0]
+        for _, data in enumerate(loader, 0):
+            feature_vector = data
 
             batch_counter += 1
 
@@ -99,7 +102,7 @@ class RelapseDetection():
             self.best_loss = epoch_loss
             self.early_stopping_counter = 0
             # save model in order to retrieve at the end...
-            torch.save(model.state_dict(), BEST_MODEL_PATH)
+            torch.save(model.state_dict(), self.BEST_MODEL_PATH)
         else:
             self.early_stopping_counter += 1
 
@@ -107,15 +110,16 @@ class RelapseDetection():
 
 
     def test(self, model, loader, device):
-        self.model.eval()
+        model.eval()
         originals, reconstructions = list(), list()
-        for _, data in loader:
+        batch_counter = 0
+        for _, data in enumerate(loader, 0):
             feature_vector = data
             batch_counter += 1
 
             feature_vector = feature_vector.to(device)
 
-            reconstruction = self.model(feature_vector)
+            reconstruction = model(feature_vector)
             
             originals.append(feature_vector)
             reconstructions.append(reconstruction)
@@ -143,14 +147,12 @@ class RelapseDetection():
                                                 collate_fn=self.collate_fn)
         
         self.device = self.select_device()
-
-        print('self device:', self.device)
         self.model.to(self.device)
-        print('Model:', self.model)
 
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.996)
 
         self.early_stopping_counter = 0
         self.best_loss = 100000 # just a random large value
@@ -160,36 +162,24 @@ class RelapseDetection():
             self.validate(self.model, criterion, val_loader, self.device, epoch)
             print('early stopping counter:', self.early_stopping_counter)
             if ((self.early_stopping_counter >= self.early_stopping_patience) or (epoch == (self.epochs - 1))):
+                print(f'Training ended. Best MSE loss on validation data {self.best_loss}')
                 best_model = Autoencoder(self.window_size)
-                state_dict = torch.load(BEST_MODEL_PATH)
+                state_dict = torch.load(self.BEST_MODEL_PATH)
                 best_model.load_state_dict(state_dict)
                 best_model.to(self.device)
                 break
-        
-        print('Now predicting on test set...')
+
+        print('Now predicting on unseen validation set...')
 
         originals, reconstructions = self.test(best_model, test_loader, self.device)
+        
+        anomaly_scores = [criterion(originals[i], reconstructions[i]).item() for i in range(len(originals))]
 
-        anomaly_scores = list()
-
-        for i in range(len(originals)):
-            reconstruction_error = criterion(originals[i], reconstructions[i])
-            anomaly_scores.append(reconstruction_error)
-
-        relapse_labels = [] # here a list with the label of each input should be created
-        # Compute ROC Curve
-        precision, recall, _ = sklearn.metrics.precision_recall_curve(relapse_labels, anomaly_scores)
-
-        fpr, tpr, _ = sklearn.metrics.roc_curve(relapse_labels, anomaly_scores)
-
-        # Compute AUROC
-        auroc = sklearn.metrics.auc(fpr, tpr)
-
-        # Compute AUPRC
-        auprc = sklearn.metrics.auc(recall, precision)
-
-        print(f'Performance on test set:\n AUROC: {auroc}, AUPRC: {auprc}')
-
+        print('Min MSE loss on validation data (normal state):', np.min(anomaly_scores))
+        print('Average MSE loss on validation data (normal state):', np.mean(anomaly_scores))
+        print('Median MSE loss on validation data (normal state):', np.median(anomaly_scores))
+        print('Max MSE loss on validation data (normal state):', np.max(anomaly_scores))
+      
 
 
 if __name__=='__main__':
@@ -213,10 +203,18 @@ if __name__=='__main__':
     )
 
     parser.add_argument(
+        "-c",
+        "--checkpoint_path",
+        required=True,
+        help="path to model load/save checkpoint.",
+    )
+
+    parser.add_argument(
         "-bs",
         "--batch_size",
         required=False,
-        default=1,
+        default=8,
+        type=int,
         help="batch size for training, validation and test processes",
     )
 
@@ -224,8 +222,9 @@ if __name__=='__main__':
         "-es",
         "--early_stopping",
         required=False,
-        default=25,
-        help="early stopping patient to use during training",
+        default=150,
+        type=int,
+        help="early stopping patience to use during training",
     )
 
     parser.add_argument(
@@ -233,6 +232,7 @@ if __name__=='__main__':
         "--learning_rate",
         required=False,
         default=1e-4,
+        type=float,
         help="learning rate to use during training",
     )
 
@@ -240,7 +240,8 @@ if __name__=='__main__':
         "-ep",
         "--epochs",
         required=False,
-        default=1000,
+        default=1500,
+        type=int,
         help="number of epochs to train for",
     )
 
@@ -249,16 +250,15 @@ if __name__=='__main__':
         "--window_size",
         required=False,
         default=50,
+        type=int,
         help="number of 5 minute intervals to use during training",
     )
 
     args = parser.parse_args()
 
-    print('args train feats path:', args.train_features_path)
-
-
     obj = RelapseDetection(args.train_features_path,
                            args.test_features_path,
+                           args.checkpoint_path,
                            args.batch_size,
                            args.early_stopping,
                            args.learning_rate,

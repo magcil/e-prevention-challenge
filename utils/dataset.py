@@ -20,16 +20,17 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         self.base_path = base_path
         self.window_size = window_size
 
-        if isinstance(self.base_path, list) and len(self.base_path)>1:
-            multifile = True
-            self.features_paths = list()
-            for path in self.base_path:
-                self.features_paths.extend(os.listdir(path))
+        if isinstance(self.base_path, list):
+            if len(self.base_path)>1:
+                multifile = True
+                self.features_paths = list()
+                for path in self.base_path:
+                    self.features_paths.extend(os.listdir(path))
+            else:
+                self.features_paths = os.listdir(self.base_path[0])
         else:
-            self.features_paths = os.listdir(self.base_path[0])
+            self.features_paths = os.listdir(self.base_path)
         
-        print('self features paths:', self.features_paths)
-
 
         if split=='train':
             self.features_paths= self.features_paths[:math.floor(0.8 * (len(self.features_paths)))]
@@ -39,9 +40,14 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         # Normalize dataframe columns
         print(f'Normalizing the {split} DataFrame columns. This might take some seconds...')
         
-        self.norm_base_path = os.path.dirname(self.base_path[0]) + '/norm_features'
-        normalize_cols(self.base_path[0], self.features_paths, self.norm_base_path)
-        self.normalized_feat_paths = os.listdir(self.norm_base_path)
+        if isinstance(self.base_path, list):
+            self.norm_base_path = os.path.dirname(self.base_path[0]) + '/norm_features'
+            normalize_cols(self.base_path[0], self.features_paths, self.norm_base_path)
+            self.normalized_feat_paths = os.listdir(self.norm_base_path)
+        else:
+            self.norm_base_path = os.path.dirname(self.base_path) + '/norm_features'
+            normalize_cols(self.base_path, self.features_paths, self.norm_base_path)
+            self.normalized_feat_paths = os.listdir(self.norm_base_path)
         
 
 
@@ -54,13 +60,13 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         
         day_df = pd.read_parquet(os.path.join(self.norm_base_path, self.normalized_feat_paths[index]), engine='fastparquet')
 
-        # drop time-related columns (not sure if this is right)
-        fragment = day_df.drop(columns=["DateTime", 'sin_t', 'cos_t'])
+        # drop DateTime column
+        fragment = day_df.drop(columns=["DateTime"])
 
 
         if len(day_df) - self.window_size > 0:
             start_ = random.randint(0, len(day_df)-self.window_size)
-            fragment = fragment.iloc[start_ : start_ + self.window_size]
+            fragment = fragment.sample(n=self.window_size).sort_index()
             rows = [row.to_list() for index, row in fragment.iterrows()]
 
         else: # zero-padding
@@ -69,14 +75,7 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
 
             for i in range(difference):
                 rows.append([0 for i in range(len(fragment.columns))])
-                
         
+        item = torch.Tensor(rows).unsqueeze(0)
 
-        flat_list = []
-        for row in rows:
-            flat_list.extend(row)
-        
-        item = torch.Tensor(flat_list).unsqueeze(1)
-
-        
         return item
