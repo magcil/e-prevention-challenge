@@ -156,9 +156,9 @@ if __name__ == "__main__":
                         nargs='+',
                         required=True,
                         help='List of patient ids to run the experiment.')
-    parser.add_argument('--plot', type=bool, default=True, help='Plot histograms and importances.')
-    parser.add_argument('--importances', type=bool, default=False, help='Whether to plot feature importances.')
-    parser.add_argument('--verbose', type=bool, default=True, help='Controls verbosity of script.')
+    parser.add_argument('--plot', action='store_true', help='Plot histograms and importances.')
+    parser.add_argument('--importances', action='store_true', help='Whether to plot feature importances.')
+    parser.add_argument('--verbose', action='store_false', help='Controls verbosity of script.')
 
     args = parser.parse_args()
     track_id = args.track
