@@ -11,7 +11,7 @@ from tqdm import tqdm
 from sklearn.model_selection import KFold
 from sklearn.svm import SVC
 from sklearn.metrics import confusion_matrix, f1_score, accuracy_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupShuffleSplit
 
 import plotly
 import plotly.subplots
@@ -107,20 +107,27 @@ def execute_experiment(track_id: int,
         Tuple[float, float]: F1 score, Accuracy of classification
     """
 
-    all_pos, all_neg = get_pos_neg_samples(track_id, patient_id, FEATURE_NAMES)
+    features = get_pos_neg_samples(track_id, patient_id, FEATURE_NAMES, group_labels=True)
 
     if plot_histograms:
-        plot_feature_histograms([all_pos, all_neg], FEATURE_NAMES, ['pos', 'neg'], 5, f"patient_0{patient_id}.html")
+        plot_feature_histograms([features['relapses'], features['non_relapses']], FEATURE_NAMES, ['pos', 'neg'], 5,
+                                f"patient_0{patient_id}.html")
 
     if verbose:
         print(f"{8* '*'} Running Experiments for Patient {patient_id} {8*'*'}\n")
-        print(f"- Positive samples: {all_pos.shape[0]} | Negative samples: {all_neg.shape[0]}")
+        print(
+            f"- Positive samples: {features['relapses'].shape[0]} | Negative samples: {features['non_relapses'].shape[0]}"
+        )
 
     # Split to train/test
-    X, y = np.concatenate([all_pos, all_neg], axis=0), np.concatenate(
-        [np.ones(all_pos.shape[0], dtype=np.int32),
-         np.zeros(all_neg.shape[0], dtype=np.int32)], axis=0)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X, y = np.concatenate([features['relapses'], features['non_relapses']], axis=0), np.concatenate([
+        np.ones(features['relapses'].shape[0], dtype=np.int32),
+        np.zeros(features['non_relapses'].shape[0], dtype=np.int32)
+    ],
+                                                                                                    axis=0)
+    gss = GroupShuffleSplit(n_splits=1, train_size=0.8, random_state=42)
+    train_index, test_index = next(gss.split(X, y, features['groups']))
+    X_train, X_test, y_train, y_test = X[train_index], X[test_index], y[train_index], y[test_index]
 
     # Run experiment
     mean, std = X_train.mean(axis=0), np.std(X_train, axis=0)
