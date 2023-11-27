@@ -293,10 +293,11 @@ def extract_user_features(track: Optional[int] = None,
         os.makedirs(path_to_save)
 
     day = 0
-    p_bar = tqdm(days,
-                 desc=f'Extracting features for each day (Track: {track} | Patient: {patient} | Mode: {mode})',
-                 leave=False,
-                 postfix={"Day": f"{day} | {days[-1]}"})
+    p_bar = tqdm(
+        days,
+        desc=f'Extracting features for each day (Track: {track} | Patient: {patient} | Mode: {mode} | Num: {num})',
+        leave=False,
+        postfix={"Day": f"{day} | {days[-1]}"})
 
     for day in p_bar:
         day_features = extract_day_features(full_dfs, day_index=day)
