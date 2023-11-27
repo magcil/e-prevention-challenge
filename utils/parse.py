@@ -111,8 +111,13 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
 def get_unique_days(track: int, patient: int, mode: str, num: int):
     df_1 = parse_data(track, patient, mode, num, "hrm")
     df_2 = parse_data(track, patient, mode, num, "gyr")
+    df_3 = parse_data(track, patient, mode, num, "linacc")
 
-    return np.intersect1d(df_1['day_index'].unique(), df_2['day_index'].unique(), assume_unique=True)
+    return np.intersect1d(ar1=df_3['day_index'].unique(),
+                          ar2=np.intersect1d(ar1=df_1['day_index'].unique(),
+                                             ar2=df_2['day_index'].unique(),
+                                             assume_unique=True),
+                          assume_unique=True)
 
 
 def parse_dtypes(track: int, patient: int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
