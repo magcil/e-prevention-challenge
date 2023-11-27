@@ -5,7 +5,7 @@ import numpy as np
 import pyhrv
 import scipy
 import argparse
-from typing import Dict, Optional, Union, Tuple
+from typing import Dict, Optional, Union, Tuple, List
 import sys
 from tqdm import tqdm
 from sklearn.model_selection import KFold
@@ -22,12 +22,7 @@ import matplotlib
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), '../'))
 from utils.util_funcs import get_pos_neg_samples
-
-FEATURE_NAMES = [
-    'heartRate_nanmean', 'rRInterval_nanmean', 'rRInterval_rmssd', 'rRInterval_sdnn',
-    'rRInterval_lombscargle_power_high', 'gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std', 'acc_mean',
-    'acc_std', 'acc_delta_mean', 'acc_delta_std', 'sin_t', 'cos_t'
-]
+from config import FEATURE_NAMES
 
 
 def plot_feature_histograms(list_of_feature_mtr, feature_names, class_names, n_columns=5, out_file=None):
@@ -91,6 +86,7 @@ def f_importances(coef, names):
 
 def execute_experiment(track_id: int,
                        patient_id: int,
+                       feature_names: List[str],
                        plot_histograms: bool = False,
                        show_importances: bool = False,
                        verbose: bool = False) -> Tuple[float, float]:
@@ -99,6 +95,7 @@ def execute_experiment(track_id: int,
     Args:
         track_id (int): Track number
         patient_id (int): Patient id
+        feature_names (List[str]): The features to use for the experiment
         plot_histograms (bool): Whether to plot histograms and importances
         show_importances (bool): Wheter to plow feature importances
         verbose (bool): Whether to print classification results
@@ -107,10 +104,10 @@ def execute_experiment(track_id: int,
         Tuple[float, float]: F1 score, Accuracy of classification
     """
 
-    features = get_pos_neg_samples(track_id, patient_id, FEATURE_NAMES, group_labels=True)
+    features = get_pos_neg_samples(track_id, patient_id, feature_names, group_labels=True)
 
     if plot_histograms:
-        plot_feature_histograms([features['relapses'], features['non_relapses']], FEATURE_NAMES, ['pos', 'neg'], 5,
+        plot_feature_histograms([features['relapses'], features['non_relapses']], feature_names, ['pos', 'neg'], 5,
                                 f"patient_0{patient_id}.html")
 
     if verbose:
@@ -150,7 +147,7 @@ def execute_experiment(track_id: int,
         svm = SVC(kernel='linear')
         svm.fit(X_train, y_train)
         print(svm.coef_)
-        f_importances(svm.coef_[0], FEATURE_NAMES)
+        f_importances(svm.coef_[0], feature_names)
 
     return f1, acc, f1_relapses
 
@@ -163,6 +160,11 @@ if __name__ == "__main__":
                         nargs='+',
                         required=True,
                         help='List of patient ids to run the experiment.')
+    parser.add_argument('--features',
+                        type=str,
+                        nargs='+',
+                        default=['hrm', 'gyr', 'linacc'],
+                        help='The features to use for the experiment.')
     parser.add_argument('--plot', action='store_true', help='Plot histograms and importances.')
     parser.add_argument('--importances', action='store_true', help='Whether to plot feature importances.')
     parser.add_argument('--verbose', action='store_false', help='Controls verbosity of script.')
@@ -174,11 +176,17 @@ if __name__ == "__main__":
     importances = args.importances
     verbose = args.verbose
 
+    feature_names = []
+    for dtype in args.features:
+        feature_names += FEATURE_NAMES[dtype]
+    feature_names += ['cos_t', 'sin_t']
+
     all_f1s, all_accs, f1_relapses_all = [], [], []
 
     for patient_id in patients:
         f1, acc, f1_relapses = execute_experiment(track_id=track_id,
                                                   patient_id=patient_id,
+                                                  feature_names=feature_names,
                                                   plot_histograms=plot,
                                                   show_importances=importances,
                                                   verbose=verbose)
