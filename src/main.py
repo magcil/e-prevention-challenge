@@ -32,6 +32,7 @@ class RelapseDetection():
 
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        device = 'cpu'
         return device
     
     # add a collate fn which ignores None
@@ -50,7 +51,7 @@ class RelapseDetection():
         # and start the training loop!
         
         for _, data in enumerate(loader, 0):
-            feature_vector = data
+            feature_vector = data[0]
 
             batch_counter += 1
 
@@ -83,7 +84,7 @@ class RelapseDetection():
         # and start the training loop!
         
         for _, data in enumerate(loader, 0):
-            feature_vector = data
+            feature_vector = data[0]
 
             batch_counter += 1
 
@@ -114,7 +115,7 @@ class RelapseDetection():
         originals, reconstructions = list(), list()
         batch_counter = 0
         for _, data in enumerate(loader, 0):
-            feature_vector = data
+            feature_vector = data[0]
             batch_counter += 1
 
             feature_vector = feature_vector.to(device)
@@ -130,8 +131,8 @@ class RelapseDetection():
 
         # Load dataset
         train_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='train')
-        val_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='validation')
-        test_dataset = RelapseDetectionDataset(self.test_features_path, self.window_size, split='test')
+        val_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='dev')
+        test_dataset = RelapseDetectionDataset(self.test_features_path, self.window_size, split='validation')
 
         # Define the dataloader
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 

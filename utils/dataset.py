@@ -19,45 +19,57 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         
         self.base_path = base_path
         self.window_size = window_size
+        self.split = split
+
+        self.map = {
+            '0': 'normal',
+            '1': 'relapse'
+        }
 
         if isinstance(self.base_path, list):
             if len(self.base_path)>1:
-                multifile = True
                 self.features_paths = list()
                 for path in self.base_path:
-                    self.features_paths.extend(os.listdir(path))
+                    self.features_paths.append(os.listdir(path))
             else:
                 self.features_paths = os.listdir(self.base_path[0])
         else:
             self.features_paths = os.listdir(self.base_path)
         
 
-        if split=='train':
-            self.features_paths= self.features_paths[:math.floor(0.8 * (len(self.features_paths)))]
-        elif split == 'validation':
-            self.features_paths = self.features_paths[math.floor(0.8 * (len(self.features_paths))):]
+        if self.split=='train':
+            for i in range(len(self.features_paths)):
+                print('len of split:', math.floor(0.8 * (len(self.features_paths[i]))))
+                self.features_paths[i] = self.features_paths[i][:math.floor(0.8 * (len(self.features_paths[i])))]
+        elif self.split == 'validation':
+            for i in range(len(self.features_paths)):
+                self.features_paths[i] = self.features_paths[i][math.floor(0.8 * (len(self.features_paths[i]))):]
+
 
         # Normalize dataframe columns
-        print(f'Normalizing the {split} DataFrame columns. This might take some seconds...')
+        print(f'Normalizing the {self.split} DataFrame columns. This might take some seconds...')
         
         if isinstance(self.base_path, list):
-            self.norm_base_path = os.path.dirname(self.base_path[0]) + '/norm_features'
-            normalize_cols(self.base_path[0], self.features_paths, self.norm_base_path)
-            self.normalized_feat_paths = os.listdir(self.norm_base_path)
+            for i, path in enumerate(self.base_path):
+                self.norm_base_path = os.path.dirname(os.path.dirname(path)) + f'/norm_features_{self.split}'
+                normalize_cols(path, self.features_paths[i], self.norm_base_path, i, self.split)
+                self.normalized_feat_paths = os.listdir(self.norm_base_path)
         else:
-            self.norm_base_path = os.path.dirname(self.base_path) + '/norm_features'
-            normalize_cols(self.base_path, self.features_paths, self.norm_base_path)
+            state = self.map[os.path.dirname(self.base_path)[-1]]
+            self.norm_base_path = os.path.dirname(os.path.dirname(self.base_path)) + f'/norm_features_{self.split}_{state}'
+            normalize_cols(self.base_path, self.features_paths, self.norm_base_path, state, self.split)
             self.normalized_feat_paths = os.listdir(self.norm_base_path)
         
 
 
     def __len__(self):
-        return len(self.features_paths)
+        return len(self.normalized_feat_paths)
 
     
 
     def __getitem__(self, index):
         
+        location = os.path.join(self.norm_base_path, self.normalized_feat_paths[index])
         day_df = pd.read_parquet(os.path.join(self.norm_base_path, self.normalized_feat_paths[index]), engine='fastparquet')
 
         # drop DateTime column
@@ -78,4 +90,4 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         
         item = torch.Tensor(rows).unsqueeze(0)
 
-        return item
+        return item, location

@@ -40,7 +40,10 @@ class Autoencoder(nn.Module):
             nn.Sigmoid()
         )
          
-    def forward(self, x):
+    def forward(self, x, flag=False, save_path=''):
         x = self.encoder(x)
+        if flag:
+            with open(save_path + '.npy', 'wb') as f:
+                np.save(f, x.detach().numpy())
         x = self.decoder(x)
         return x

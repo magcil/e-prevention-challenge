@@ -1,7 +1,9 @@
 import pandas as pd
 import os
+import numpy as np
 
-def normalize_cols(base_path, features_paths, out_dir):
+
+def normalize_cols(base_path, features_paths, out_dir, idx, split):
     TIME_RELATED = ['DateTime']
     for f in features_paths:
         day_df = pd.read_parquet(os.path.join(base_path, f), engine='fastparquet')
@@ -9,10 +11,11 @@ def normalize_cols(base_path, features_paths, out_dir):
         for col in day_df.columns:
             if col not in TIME_RELATED:
                 for i in day_df[col].index:
+                    if day_df[col].isnull().values.any() == True:
+                        day_df[col].fillna(0, inplace=True)
                     day_df[col][i] = (day_df[col][i] - day_df[col].min()) / (day_df[col].max() - day_df[col].min())
 
-        filename = f'norm_{f}'
-        out_dir = os.path.dirname(base_path) + '/norm_features'
+        filename = f'norm_{split}_{idx}_{f}'
 
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)

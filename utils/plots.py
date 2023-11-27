@@ -4,9 +4,10 @@ import seaborn as sns
 def density_plot(to_plot:list, labels:list, colors:list, save_path):
 
     for i, item in enumerate(to_plot):
-        sns.distplot(item , color=colors[i], label=labels[i])
+        sns.distplot(item, hist=False, color=colors[i], label=labels[i])
+        
 
-    plt.legend(labels=labels)
+    plt.legend(item, labels=labels)
     plt.savefig(f"{save_path}/losses.png")
 
 def histogram_with_kde(to_plot:list, bins:int, labels:list, colors:list, save_path:str):
