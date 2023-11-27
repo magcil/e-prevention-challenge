@@ -264,7 +264,7 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
     all_df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
     # Extract sleep features
-    if 'sleep' in fil_dfs.keys():
+    if 'sleep' in df_dicts.keys():
         FEATURE_FUNC['sleep'](all_df, df_dicts['sleep'], day_index=day_index)
     # Drop Nan Values
     return all_df.dropna()
