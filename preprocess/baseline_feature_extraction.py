@@ -1,5 +1,5 @@
 import os
-import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import pyhrv
@@ -85,9 +85,8 @@ def extract_hr(df_hrm):
     df_hrm.loc[df_hrm['rRInterval'] > valid_ranges['rRInterval'][1], 'rRInterval'] = np.nan
 
     # Convert Timedelta to datetime.time
-    start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
-    df_hrm['DateTime'] = df_hrm['time'].apply(
-        lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
+    start_time = datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
+    df_hrm['DateTime'] = df_hrm['time'].apply(lambda t: datetime.combine(datetime.today(), start_time) + t)
 
     df_hrm = df_hrm.groupby(pd.Grouper(key='DateTime', freq='5Min')).agg({
         'heartRate':
@@ -109,9 +108,8 @@ def extract_linacc(df_linacc):
                   'Z'] = np.nan
 
     # Convert Timedelta to datetime.time
-    start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
-    df_linacc['DateTime'] = df_linacc['time'].apply(
-        lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
+    start_time = datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
+    df_linacc['DateTime'] = df_linacc['time'].apply(lambda t: datetime.combine(datetime.today(), start_time) + t)
 
     # Calculate 5Min Norm aggregations
     norm_aggrs = df_linacc.groupby(pd.Grouper(key='DateTime', freq='5Min')).apply(get_norm)
@@ -129,8 +127,68 @@ def extract_linacc(df_linacc):
     return df_linacc
 
 
-def extract_sleep(df):
+# Utility functions for sleep related features
+
+
+# Filter sleep data on target day
+def filter_sleep(df, day_index):
+    return df[((df['start_date_index'] == day_index - 1) & (df['end_date_index'] == day_index)) |
+              ((df['start_date_index'] == day_index) & (df['end_date_index'] == day_index)) |
+              ((df['start_date_index'] == day_index) & (df['end_date_index'] == day_index + 1))].copy(deep=True)
+
+
+def convert_to_datetime(df: pd.DataFrame, date, cols):
+    df[cols] += datetime(year=date.year, month=date.month, day=date.day)
     return df
+
+
+def adjust_days(df: pd.DataFrame, day_index: int):
+    df.loc[df['start_date_index'] == day_index - 1, 'start_time'] -= timedelta(days=1)
+    df.loc[df['end_date_index'] == day_index + 1, 'end_time'] += timedelta(days=1)
+    return df
+
+
+def append_sleep_features(f: pd.DataFrame, s: pd.DataFrame, day_index: int):
+    """Append sleep features on the extracted features
+    
+    Args:
+        f (pd.DataFrame): The extracted features
+        s (pd.DataFrame): The sleep data
+        day_index (int): The day index corresponding to features f
+    Returns:
+        pd.DataFrame: features + sleep features appended
+    """
+    date = f['DateTime'].iloc[0].date()
+    s_filt = filter_sleep(s, day_index=day_index)
+
+    s_filt = s_filt.pipe(convert_to_datetime, date=date, cols=['start_time', 'end_time']).pipe(adjust_days,
+                                                                                               day_index=day_index)
+
+    interval_sleeps, aggr_sleeps, n_sleeps = [], [], []
+
+    for dtime in f['DateTime']:
+        aggr_sleep = 0
+        n_sleep = 0
+        on_sleep = False
+        interval_sleep = 0
+        for dt_times in s_filt.itertuples(index=False):
+            start_time, end_time = dt_times.start_time, dt_times.end_time
+            if start_time <= dtime <= end_time:
+                # On sleeping interval
+                on_sleep = True
+                interval_sleep = (dtime - start_time).total_seconds() // 60
+                n_sleep += 1
+            elif end_time < dtime:
+                n_sleep += 1
+                aggr_sleep += (end_time - start_time).total_seconds() // 60
+
+        interval_sleeps.append(interval_sleep)
+        aggr_sleeps.append(aggr_sleep + interval_sleep)
+        n_sleeps.append(n_sleep)
+
+    f['interval_sleep'] = interval_sleeps
+    f['aggr_sleep'] = aggr_sleeps
+    f['n_sleep'] = n_sleeps
 
 
 def extract_gyr(df):
@@ -140,8 +198,8 @@ def extract_gyr(df):
     df.loc[(df['Z'] < valid_ranges['gyr_Z'][0]) | (df['Z'] >= valid_ranges['gyr_Z'][1]), 'Z'] = np.nan
 
     # Convert Timedelta to datetime.time
-    start_time = datetime.datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
-    df['DateTime'] = df['time'].apply(lambda t: datetime.datetime.combine(datetime.datetime.today(), start_time) + t)
+    start_time = datetime.strptime('00:00:00', '%H:%M:%S').time()  # Start time
+    df['DateTime'] = df['time'].apply(lambda t: datetime.combine(datetime.today(), start_time) + t)
 
     # Calculate 5Min Norm aggregations
     norm_aggrs = df.groupby(pd.Grouper(key='DateTime', freq='5Min')).apply(get_norm)
@@ -167,7 +225,7 @@ FEATURE_FUNC = {
     'gyr': extract_gyr,
     'hrm': extract_hr,
     'linacc': extract_linacc,
-    'sleep': extract_sleep,
+    'sleep': append_sleep_features,
     'step': extract_step
 }
 
@@ -183,12 +241,16 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
         pd.DataFrame: Features of a specific day
     """
     dtypes = df_dicts.keys()
-    fil_dfs = {dtype: df_dicts[dtype][df_dicts[dtype]['day_index'] == day_index].copy(deep=True) for dtype in dtypes}
+    fil_dfs = {
+        dtype: df_dicts[dtype][df_dicts[dtype]['day_index'] == day_index].copy(deep=True)
+        for dtype in dtypes if dtype not in ['sleep']
+    }
     all_df = []
     for dtype, df in fil_dfs.items():
-        feature_extractor = FEATURE_FUNC[dtype]
-        df = feature_extractor(df)
-        all_df.append(df)
+        if dtype != 'sleep':
+            feature_extractor = FEATURE_FUNC[dtype]
+            df = feature_extractor(df)
+            all_df.append(df)
 
     # Combine all
     all_df = pd.concat(all_df, axis=1, join='inner')
@@ -201,6 +263,9 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
     all_df['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
     all_df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
+    # Extract sleep features
+    if dtype in fil_dfs.keys():
+        FEATURE_FUNC['sleep'](all_df, df_dicts['sleep'], day_index=day_index)
     # Drop Nan Values
     return all_df.dropna()
 
