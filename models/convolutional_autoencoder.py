@@ -10,14 +10,17 @@ class Autoencoder(nn.Module):
         super(Autoencoder, self).__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(1, 8, kernel_size=(3, 3), stride=1, padding=1),
+            nn.BatchNorm2d(8),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             nn.Conv2d(8, 16, kernel_size=(3, 3), stride=1, padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
             nn.Conv2d(16, 32, kernel_size=(3, 3), stride=1, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2)
+            nn.MaxPool2d(kernel_size=2),
         )
         self.decoder = nn.Sequential(
             nn.ConvTranspose2d(32, 16, 

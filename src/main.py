@@ -9,6 +9,7 @@ from torchmetrics.regression import MeanSquaredLogError
 import sklearn.metrics
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
+from utils.split import split_train_val, handle_dev
 import torch.optim.lr_scheduler as lr_scheduler
 import matplotlib.pyplot as plt
 import argparse
@@ -17,9 +18,9 @@ import seaborn as sns
 
 class RelapseDetection():
 
-    def __init__(self, train_feats_path, test_feats_path, checkpoint_path, batch_size, patience, lr, epochs, window_size):
+    def __init__(self, train_feats_path, dev_feats_path, checkpoint_path, batch_size, patience, lr, epochs, window_size):
         self.train_features_path = train_feats_path
-        self.test_features_path = test_feats_path
+        self.dev_features_path = dev_feats_path
         self.BEST_MODEL_PATH = checkpoint_path
         self.batch_size = batch_size
         self.early_stopping_patience = patience
@@ -126,13 +127,35 @@ class RelapseDetection():
             reconstructions.append(reconstruction)
 
         return originals, reconstructions
+    
+    def common_data(self, list1, list2):
+        result = False
+    
+        # traverse in the 1st list
+        for x in list1:
+    
+            # traverse in the 2nd list
+            for y in list2:
+    
+                # if one common
+                if x == y:
+                    print(x)
+                    result = True
+                    return result 
+                    
+        return result
 
     def run(self):
 
+        train_patient_dir = os.path.dirname(os.path.dirname(self.train_features_path[0]))
+        dev_patient_dir = os.path.dirname(os.path.dirname(self.dev_features_path[0]))
+        train_paths, val_paths = split_train_val(self.train_features_path)
+        dev_paths = handle_dev(self.dev_features_path)
+
         # Load dataset
-        train_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='train')
-        val_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='dev')
-        test_dataset = RelapseDetectionDataset(self.test_features_path, self.window_size, split='validation')
+        train_dataset = RelapseDetectionDataset(train_paths, train_patient_dir, self.window_size, split='train')
+        val_dataset = RelapseDetectionDataset(val_paths, train_patient_dir, self.window_size, split='validation')
+        
 
         # Define the dataloader
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
@@ -143,9 +166,18 @@ class RelapseDetection():
                                                     batch_size=self.batch_size, 
                                                     shuffle=False,
                                                     collate_fn=self.collate_fn)
-        test_loader = torch.utils.data.DataLoader(dataset=test_dataset, 
-                                                batch_size=self.batch_size,
-                                                collate_fn=self.collate_fn)
+        
+        if (not dev_paths[0]) == False: # not 'list_name' returns True if the list is empty
+            dev_dataset = RelapseDetectionDataset(dev_paths[0], dev_patient_dir, self.window_size, split='dev', state='normal')
+            dev_loader_normal = torch.utils.data.DataLoader(dataset=dev_dataset, 
+                                                    batch_size=self.batch_size,
+                                                    collate_fn=self.collate_fn)
+        
+        if (not dev_paths[1]) == False: # not 'list_name' returns True if the list is empty
+            dev_dataset = RelapseDetectionDataset(dev_paths[1], dev_patient_dir, self.window_size, split='dev', state='relapsed')
+            dev_loader_relapsed = torch.utils.data.DataLoader(dataset=dev_dataset, 
+                                                    batch_size=self.batch_size,
+                                                    collate_fn=self.collate_fn)
         
         self.device = self.select_device()
         self.model.to(self.device)
@@ -153,7 +185,7 @@ class RelapseDetection():
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.996)
+        self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.997)
 
         self.early_stopping_counter = 0
         self.best_loss = 100000 # just a random large value
@@ -172,14 +204,25 @@ class RelapseDetection():
 
         print('Now predicting on unseen validation set...')
 
-        originals, reconstructions = self.test(best_model, test_loader, self.device)
-        
-        anomaly_scores = [criterion(originals[i], reconstructions[i]).item() for i in range(len(originals))]
+        if 'dev_loader_normal' in locals():
+            originals, reconstructions = self.test(best_model, dev_loader_normal, self.device)
+            
+            anomaly_scores = [criterion(originals[i], reconstructions[i]).item() for i in range(len(originals))]
 
-        print('Min MSE loss on validation data (normal state):', np.min(anomaly_scores))
-        print('Average MSE loss on validation data (normal state):', np.mean(anomaly_scores))
-        print('Median MSE loss on validation data (normal state):', np.median(anomaly_scores))
-        print('Max MSE loss on validation data (normal state):', np.max(anomaly_scores))
+            print('Min MSE loss on dev data (normal state):', np.min(anomaly_scores))
+            print('Average MSE loss on dev data (normal state):', np.mean(anomaly_scores))
+            print('Median MSE loss on dev data (normal state):', np.median(anomaly_scores))
+            print('Max MSE loss on dev data (normal state):', np.max(anomaly_scores))
+        
+        if 'dev_loader_relapsed' in locals():
+            originals, reconstructions = self.test(best_model, dev_loader_relapsed, self.device)
+            
+            anomaly_scores = [criterion(originals[i], reconstructions[i]).item() for i in range(len(originals))]
+
+            print('Min MSE loss on dev data (relapsed state):', np.min(anomaly_scores))
+            print('Average MSE loss on dev data (relapsed state):', np.mean(anomaly_scores))
+            print('Median MSE loss on dev data (relapsed state):', np.median(anomaly_scores))
+            print('Max MSE loss on dev data (relapsed state):', np.max(anomaly_scores))
       
 
 
@@ -197,7 +240,7 @@ if __name__=='__main__':
 
     parser.add_argument(
         "-tep",
-        "--test_features_path",
+        "--dev_features_path",
         required=True,
         nargs='+',
         help="path to folder where testing .parquet files are contained (one for each day)",
@@ -214,7 +257,7 @@ if __name__=='__main__':
         "-bs",
         "--batch_size",
         required=False,
-        default=8,
+        default=32,
         type=int,
         help="batch size for training, validation and test processes",
     )
@@ -223,7 +266,7 @@ if __name__=='__main__':
         "-es",
         "--early_stopping",
         required=False,
-        default=150,
+        default=25,
         type=int,
         help="early stopping patience to use during training",
     )
@@ -232,7 +275,7 @@ if __name__=='__main__':
         "-lr",
         "--learning_rate",
         required=False,
-        default=1e-4,
+        default=1e-3,
         type=float,
         help="learning rate to use during training",
     )
@@ -258,7 +301,7 @@ if __name__=='__main__':
     args = parser.parse_args()
 
     obj = RelapseDetection(args.train_features_path,
-                           args.test_features_path,
+                           args.dev_features_path,
                            args.checkpoint_path,
                            args.batch_size,
                            args.early_stopping,

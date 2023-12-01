@@ -3,25 +3,26 @@ import os
 import numpy as np
 
 
-def normalize_cols(base_path, features_paths, out_dir, idx, split):
+def normalize_cols(features_paths, split, save_dir):
     TIME_RELATED = ['DateTime']
     for f in features_paths:
-        day_df = pd.read_parquet(os.path.join(base_path, f), engine='fastparquet')
+        day_df = pd.read_parquet(f, engine='fastparquet')
 
         for col in day_df.columns:
             if col not in TIME_RELATED:
-                for i in day_df[col].index:
-                    if day_df[col].isnull().values.any() == True:
-                        day_df[col].fillna(0, inplace=True)
-                    day_df[col][i] = (day_df[col][i] - day_df[col].min()) / (day_df[col].max() - day_df[col].min())
+                day_df[col].replace([-np.inf, np.inf], [np.nan, np.nan], inplace=True)
 
-        filename = f'norm_{split}_{idx}_{f}'
+                if day_df[col].isnull().values.any() == True:
+                        day_df[col].fillna(day_df[col].mean(), inplace=True)
+                
+                day_df[col] = (day_df[col] - day_df[col].min()) / (day_df[col].max() - day_df[col].min())
+        
+        filename_chunks = f.split('/')
+        idx, prq = filename_chunks[-3], filename_chunks[-1]
+        filename = f'norm_{idx}_{prq}'
 
-        if not os.path.exists(out_dir):
-            os.makedirs(out_dir)
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
-
-        out_file = os.path.join(out_dir, filename)
+        out_file = os.path.join(save_dir, filename)
         day_df.to_parquet(out_file, engine='fastparquet')
-        norm_base_path = out_dir
-        normalized_feat_paths = os.listdir(out_dir)

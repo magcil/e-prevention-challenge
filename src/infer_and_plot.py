@@ -10,6 +10,8 @@ import sklearn.metrics
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
 from utils.plots import density_plot, histogram_with_kde
+from utils.split import split_train_val, handle_dev
+from utils.calculate_scores import calculate_stats
 import torch.optim.lr_scheduler as lr_scheduler
 import matplotlib.pyplot as plt
 import argparse
@@ -31,7 +33,6 @@ class RelapseDetection():
 
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        device='cpu'
         return device
     
     # add a collate fn which ignores None
@@ -45,6 +46,7 @@ class RelapseDetection():
         model.eval()
         originals, reconstructions = list(), list()
         batch_counter = 0
+        filename = ''
 
         for _, data in enumerate(loader, 0):
             feature_vector = data[0]
@@ -68,12 +70,14 @@ class RelapseDetection():
 
     def run(self):
 
-        # Load dataset
-        test_dataset = RelapseDetectionDataset(self.test_features_path[0], self.window_size, split='test')
-        test_dataset_2 = RelapseDetectionDataset(self.test_features_path[1], self.window_size, split='test')
-        train_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='train')
-        val_dataset = RelapseDetectionDataset(self.train_features_path, self.window_size, split='validation')
+        patient_dir = os.path.dirname(os.path.dirname(self.train_features_path[0]))
+        train_paths, val_paths = split_train_val(self.train_features_path)
+        test_paths = handle_dev(self.test_features_path)
 
+        # Load dataset
+        train_dataset = RelapseDetectionDataset(train_paths, patient_dir, self.window_size, split='train')
+        val_dataset = RelapseDetectionDataset(val_paths, patient_dir, self.window_size, split='validation')
+        
         # Define the dataloader
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
                                                 batch_size=self.batch_size, 
@@ -83,13 +87,20 @@ class RelapseDetection():
                                                     batch_size=self.batch_size, 
                                                     shuffle=False,
                                                     collate_fn=self.collate_fn)
-        test_loader = torch.utils.data.DataLoader(dataset=test_dataset, 
-                                                batch_size=self.batch_size,
-                                                collate_fn=self.collate_fn)
+        
+        if (not test_paths[0]) == False: # not 'list_name' returns True if the list is empty
+            test_dataset_normal = RelapseDetectionDataset(test_paths[0], patient_dir, self.window_size, split='test', state='normal')
 
-        test_loader_2 = torch.utils.data.DataLoader(dataset=test_dataset_2, 
-                                                batch_size=1,
-                                                collate_fn=self.collate_fn)
+            test_loader_normal = torch.utils.data.DataLoader(dataset=test_dataset_normal, 
+                                                    batch_size=self.batch_size,
+                                                    collate_fn=self.collate_fn)
+
+        if (not test_paths[1]) == False:
+            test_dataset_relapsed = RelapseDetectionDataset(test_paths[1], patient_dir, self.window_size, split='test', state='relapsed')
+
+            test_loader_relapsed = torch.utils.data.DataLoader(dataset=test_dataset_relapsed, 
+                                                    batch_size=1,
+                                                    collate_fn=self.collate_fn)
         
         self.device = self.select_device()
 
@@ -101,40 +112,28 @@ class RelapseDetection():
         best_model.load_state_dict(state_dict)
         best_model.to(self.device)
 
+        anomalies_mse = list()
+
         print('Predict on train data')
         originals_train, reconstructions_train = self.test(best_model, self.save_enc, train_loader, self.device)
-        anomalies_mse = list()
-        
-        anomaly_scores_train = [criterion(originals_train[i], reconstructions_train[i]).item() for i in range(len(originals_train))]
-        anomalies_mse.append(anomaly_scores_train)
 
-        print('Min MSE loss on train data:', round(np.min(anomaly_scores_train), 4))
-        print('Average MSE loss on train data:', round(np.mean(anomaly_scores_train), 4))
-        print('Median MSE loss on train data:', round(np.median(anomaly_scores_train), 4))
-        print('Max MSE loss on train data:', round(np.max(anomaly_scores_train), 4))
+        anomaly_scores_train = calculate_stats(originals_train, reconstructions_train, criterion, 'train')
+        anomalies_mse.append(anomaly_scores_train)
 
         print('Now predicting on test set...')
 
-        originals_val_normal, reconstructions_val_normal = self.test(best_model, self.save_enc, test_loader, self.device)
-        
-        anomaly_scores_val_normal = [criterion(originals_val_normal[i], reconstructions_val_normal[i]).item() for i in range(len(originals_val_normal))]
-        anomalies_mse.append(anomaly_scores_val_normal)
+        if 'test_loader_normal' in locals():
+            originals_val_normal, reconstructions_val_normal = self.test(best_model, self.save_enc, test_loader_normal, self.device)            
 
-        print('Min MSE loss on test data (normal state):', round(np.min(anomaly_scores_val_normal), 4))
-        print('Average MSE loss on test data (normal state):', round(np.mean(anomaly_scores_val_normal), 4))
-        print('Median MSE loss on test data (normal state):', round(np.median(anomaly_scores_val_normal), 4))
-        print('Max MSE loss on test data (normal state):', round(np.max(anomaly_scores_val_normal),4))
-
-        originals_val_relapsed, reconstructions_val_relapsed = self.test(best_model, self.save_enc, test_loader_2, self.device)
+            anomaly_scores_val_normal = calculate_stats(originals_val_normal, reconstructions_val_normal, criterion, 'val normal')
+            anomalies_mse.append(anomaly_scores_val_normal)
         
-        anomaly_scores_val_relapsed = [criterion(originals_val_relapsed[i], reconstructions_val_relapsed[i]).item() for i in range(len(originals_val_relapsed))]
-        anomalies_mse.append(anomaly_scores_val_relapsed)
-        print('Min MSE loss on test data (relapsed state):', round(np.min(anomaly_scores_val_relapsed), 4))
-        print('Average MSE loss on test data (relapsed state):', round(np.mean(anomaly_scores_val_relapsed), 4))
-        print('Median MSE loss on test data (relapsed state):', round(np.median(anomaly_scores_val_relapsed), 4))
-        print('Max MSE loss on test data (relapsed state):', round(np.max(anomaly_scores_val_relapsed), 4))
-        
+        if 'test_loader_relapsed' in locals():
+            originals_val_relapsed, reconstructions_val_relapsed = self.test(best_model, self.save_enc, test_loader_relapsed, self.device)
 
+            anomaly_scores_val_relapsed = calculate_stats(originals_val_relapsed, reconstructions_val_relapsed, criterion, 'val relapsed')
+            anomalies_mse.append(anomaly_scores_val_relapsed)
+        
         density_plot(to_plot=anomalies_mse,
                     labels=["MSE train","MSE val_0 (normal)", "MSE val_1 (relapsed)"],
                     colors=["dodgerblue", "deeppink", "gold"],
