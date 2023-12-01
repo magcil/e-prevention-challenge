@@ -44,7 +44,8 @@ class RelapseDetection():
             return None
         return torch.utils.data.dataloader.default_collate(batch)
 
-    def test(self, model, flag, loader, device):
+    def test(self, model, flag, loader, device, patient_dir):
+        print('patient dir:', patient_dir)
         model.eval()
         originals, reconstructions = list(), list()
         batch_counter = 0
@@ -54,7 +55,8 @@ class RelapseDetection():
             print(data[1])
             feature_vector = data[0]
             if flag==True:
-                location = os.path.dirname(os.path.dirname(data[1][0])) + '/encodings/' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
+                location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
+                print('loc:', location)
                 if os.path.exists(location) == False:
                     os.makedirs(location)
                 filename = location + data[1][0].split('/')[-1]
@@ -123,7 +125,7 @@ class RelapseDetection():
         anomalies_mse = list()
 
         print('Predict on train data')
-        originals_train, reconstructions_train = self.test(best_model, self.save_enc, train_loader, self.device)
+        originals_train, reconstructions_train = self.test(best_model, self.save_enc, train_loader, self.device, patient_dir)
 
         anomaly_scores_train = calculate_stats(originals_train, reconstructions_train, criterion, 'train')
         mse_train = [self.calculate_average(anomaly_scores_train[i:i+self.spd]) for i in range(0, len(anomaly_scores_train), self.spd)]
@@ -132,14 +134,14 @@ class RelapseDetection():
         print('Now predicting on test set...')
 
         if 'test_loader_normal' in locals():
-            originals_val_normal, reconstructions_val_normal = self.test(best_model, self.save_enc, test_loader_normal, self.device)            
+            originals_val_normal, reconstructions_val_normal = self.test(best_model, self.save_enc, test_loader_normal, self.device, patient_dir)            
 
             anomaly_scores_val_normal = calculate_stats(originals_val_normal, reconstructions_val_normal, criterion, 'val normal')
             mse_val_0 = [self.calculate_average(anomaly_scores_val_normal[i:i+self.spd]) for i in range(0, len(anomaly_scores_val_normal), self.spd)]
             anomalies_mse.append(mse_val_0)
         
         if 'test_loader_relapsed' in locals():
-            originals_val_relapsed, reconstructions_val_relapsed = self.test(best_model, self.save_enc, test_loader_relapsed, self.device)
+            originals_val_relapsed, reconstructions_val_relapsed = self.test(best_model, self.save_enc, test_loader_relapsed, self.device, patient_dir)
 
             anomaly_scores_val_relapsed = calculate_stats(originals_val_relapsed, reconstructions_val_relapsed, criterion, 'val relapsed')
             mse_val_1 = [self.calculate_average(anomaly_scores_val_relapsed[i:i+self.spd]) for i in range(0, len(anomaly_scores_val_relapsed), self.spd)]
