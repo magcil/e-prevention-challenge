@@ -1,8 +1,6 @@
 # Creating a custom dataset for reading the dataframe and loading it into the dataloader to pass it to the neural network at a later stage for finetuning the model and to prepare it for predictions
 import torch
 from torchvision import transforms
-#from torchvision.transforms import RandomResizedCrop, Compose, Normalize, ToTensor, PILToTensor
-from PIL import Image
 import os
 import pandas as pd
 import math
@@ -27,6 +25,10 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         self.norm_save_dir = self.patient_dir + f'/norm_features_{self.split}_{state}'
         normalize_cols(self.features_paths, self.split, self.norm_save_dir)
         self.normalized_feat_paths = os.listdir(self.norm_save_dir)
+
+        self.ordered_columns = ['DateTime', 'heartRate_nanmean', 'rRInterval_nanmean', 'rRInterval_rmssd', 'rRInterval_sdnn',
+       'rRInterval_lombscargle_power_high', 'gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std', 'acc_mean', 'acc_std',
+       'acc_delta_mean', 'acc_delta_std', 'sin_t', 'cos_t'] # specifying a standard column order
         
 
 
@@ -38,7 +40,10 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         
         location = self.normalized_feat_paths[index]
+
         day_df = pd.read_parquet(os.path.join(self.norm_save_dir, location), engine='fastparquet')
+        day_df = day_df[self.ordered_columns] # forcing the column order as specified above
+
 
         # drop DateTime column
         fragment = day_df.drop(columns=["DateTime"])

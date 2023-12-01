@@ -6,7 +6,6 @@ import torch
 import numpy as np
 from tqdm import tqdm
 from torchmetrics.regression import MeanSquaredLogError
-import sklearn.metrics
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
 from utils.split import split_train_val, handle_dev
@@ -33,7 +32,6 @@ class RelapseDetection():
 
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        device = 'cpu'
         return device
     
     # add a collate fn which ignores None

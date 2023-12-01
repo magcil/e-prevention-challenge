@@ -1,5 +1,4 @@
 # Convolutional Autoencoder
-
 import torch
 import torch.nn as nn
 import numpy as np
@@ -42,6 +41,7 @@ class Autoencoder(nn.Module):
                                output_padding=(1,0)),               
             nn.Sigmoid()
         )
+
          
     def forward(self, x, flag=False, save_path=''):
         x = self.encoder(x)
