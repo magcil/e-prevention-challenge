@@ -12,20 +12,26 @@ pd.options.mode.chained_assignment = None
 
 class RelapseDetectionDataset(torch.utils.data.Dataset):
 
-    def __init__(self, features_paths, patient_dir, window_size, split:str, state=''):
+    def __init__(self, features_paths, patient_dir, window_size, spd, split:str, state=''):
         
         self.features_paths = features_paths
         self.patient_dir = patient_dir
         self.window_size = window_size
         self.split = split
+        self.spd = spd
 
         # Normalize dataframe columns
         print(f'Normalizing the {self.split} DataFrame columns. This might take some seconds...')
         
         self.norm_save_dir = self.patient_dir + f'/norm_features_{self.split}_{state}'
         normalize_cols(self.features_paths, self.split, self.norm_save_dir)
-        self.normalized_feat_paths = os.listdir(self.norm_save_dir)
+        #self.normalized_feat_paths = self.spd * os.listdir(self.norm_save_dir)
+        self.normalized_feat_paths = [item for item in os.listdir(self.norm_save_dir) for _ in range(self.spd)]
 
+        #print(f'{split} normalized feat paths:', self.normalized_feat_paths)
+
+        
+        
         self.ordered_columns = ['DateTime', 'heartRate_nanmean', 'rRInterval_nanmean', 'rRInterval_rmssd', 'rRInterval_sdnn',
        'rRInterval_lombscargle_power_high', 'gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std', 'acc_mean', 'acc_std',
        'acc_delta_mean', 'acc_delta_std', 'sin_t', 'cos_t'] # specifying a standard column order
@@ -43,6 +49,8 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
 
         day_df = pd.read_parquet(os.path.join(self.norm_save_dir, location), engine='fastparquet')
         day_df = day_df[self.ordered_columns] # forcing the column order as specified above
+
+        #print('day df columns:', day_df.columns)
 
 
         # drop DateTime column

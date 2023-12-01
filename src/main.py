@@ -17,7 +17,7 @@ import seaborn as sns
 
 class RelapseDetection():
 
-    def __init__(self, train_feats_path, dev_feats_path, checkpoint_path, batch_size, patience, lr, epochs, window_size):
+    def __init__(self, train_feats_path, dev_feats_path, checkpoint_path, batch_size, patience, lr, epochs, window_size, samples_per_day):
         self.train_features_path = train_feats_path
         self.dev_features_path = dev_feats_path
         self.BEST_MODEL_PATH = checkpoint_path
@@ -26,6 +26,7 @@ class RelapseDetection():
         self.lr = float(lr)
         self.epochs = epochs
         self.window_size = int(window_size)
+        self.spd = samples_per_day
 
         # define the model --> Convolutional Autoencoder
         self.model = Autoencoder(self.window_size)
@@ -66,9 +67,10 @@ class RelapseDetection():
             running_loss += loss.item()
         
         epoch_loss = running_loss / batch_counter
-        self.scheduler.step()
+        if optimizer.param_groups[0]["lr"] > 5e-5:
+            self.scheduler.step()
 
-        if (epoch%100 == 0):
+        if (epoch%50 == 0):
             print(f'Learning rate at epoch {epoch}: {optimizer.param_groups[0]["lr"]}')
 
         print('Epoch [{}], Training Loss: {:.4f}'.format(epoch, epoch_loss))
@@ -151,8 +153,8 @@ class RelapseDetection():
         dev_paths = handle_dev(self.dev_features_path)
 
         # Load dataset
-        train_dataset = RelapseDetectionDataset(train_paths, train_patient_dir, self.window_size, split='train')
-        val_dataset = RelapseDetectionDataset(val_paths, train_patient_dir, self.window_size, split='validation')
+        train_dataset = RelapseDetectionDataset(train_paths, train_patient_dir, self.window_size, self.spd, split='train')
+        val_dataset = RelapseDetectionDataset(val_paths, train_patient_dir, self.window_size, self.spd, split='validation')
         
 
         # Define the dataloader
@@ -166,13 +168,13 @@ class RelapseDetection():
                                                     collate_fn=self.collate_fn)
         
         if (not dev_paths[0]) == False: # not 'list_name' returns True if the list is empty
-            dev_dataset = RelapseDetectionDataset(dev_paths[0], dev_patient_dir, self.window_size, split='dev', state='normal')
+            dev_dataset = RelapseDetectionDataset(dev_paths[0], dev_patient_dir, self.window_size, 1, split='dev', state='normal')
             dev_loader_normal = torch.utils.data.DataLoader(dataset=dev_dataset, 
                                                     batch_size=self.batch_size,
                                                     collate_fn=self.collate_fn)
         
         if (not dev_paths[1]) == False: # not 'list_name' returns True if the list is empty
-            dev_dataset = RelapseDetectionDataset(dev_paths[1], dev_patient_dir, self.window_size, split='dev', state='relapsed')
+            dev_dataset = RelapseDetectionDataset(dev_paths[1], dev_patient_dir, self.window_size, 1, split='dev', state='relapsed')
             dev_loader_relapsed = torch.utils.data.DataLoader(dataset=dev_dataset, 
                                                     batch_size=self.batch_size,
                                                     collate_fn=self.collate_fn)
@@ -183,7 +185,7 @@ class RelapseDetection():
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.997)
+        self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.995)
 
         self.early_stopping_counter = 0
         self.best_loss = 100000 # just a random large value
@@ -264,7 +266,7 @@ if __name__=='__main__':
         "-es",
         "--early_stopping",
         required=False,
-        default=25,
+        default=20,
         type=int,
         help="early stopping patience to use during training",
     )
@@ -296,6 +298,15 @@ if __name__=='__main__':
         help="number of 5 minute intervals to use during training",
     )
 
+    parser.add_argument(
+        "-spd",
+        "--samples_per_day",
+        required=False,
+        default=5,
+        type=int,
+        help="number of 5 minute intervals to use during training",
+    )
+
     args = parser.parse_args()
 
     obj = RelapseDetection(args.train_features_path,
@@ -305,6 +316,7 @@ if __name__=='__main__':
                            args.early_stopping,
                            args.learning_rate,
                            args.epochs,
-                           args.window_size)
+                           args.window_size,
+                           args.samples_per_day)
     
     obj.run()

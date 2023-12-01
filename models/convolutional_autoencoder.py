@@ -37,9 +37,9 @@ class Autoencoder(nn.Module):
             nn.ConvTranspose2d(8, 1, 
                                kernel_size=(3, 3), 
                                stride=2, 
-                               padding=(1,0),
+                               padding=(1, 0),
                                output_padding=(1,0)),               
-            nn.Sigmoid()
+            nn.ReLU()
         )
 
          
