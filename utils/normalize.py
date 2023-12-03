@@ -18,7 +18,7 @@ def normalize_cols(features_paths, split, save_dir, mean, std, calc_norm=False):
         for f in features_paths:
             day_df = pd.read_parquet(f, engine='fastparquet')
             for col in day_df.columns:
-                if col not in TIME_RELATED:
+                if col in cols:
                     day_df[col].replace([-np.inf, np.inf], [np.nan, np.nan], inplace=True)
                     if day_df[col].isnull().values.any() == True:
                             day_df[col].fillna(day_df[col].mean(), inplace=True)
@@ -28,6 +28,7 @@ def normalize_cols(features_paths, split, save_dir, mean, std, calc_norm=False):
         for col in cols:
             means[col] = np.mean(vals[col])
             stds[col] = np.std(vals[col])
+    # ----------------------------------------------------------------------------------------
 
     for f in features_paths:
         day_df = pd.read_parquet(f, engine='fastparquet')
