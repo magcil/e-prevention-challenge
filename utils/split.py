@@ -33,6 +33,9 @@ def handle_dev(dev_paths):
                 
             else:
                 test_features_relapse_paths.append(path + f'/{filename}')
+        
+    print('TEST FEATURES NORMAL:', test_features_normal_paths)
+    print('TEST FEATURES RELAPSED:', test_features_relapse_paths)
 
     dev_features_paths = [test_features_normal_paths, test_features_relapse_paths]
     

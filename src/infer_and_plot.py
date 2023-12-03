@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import tqdm
 from torchmetrics.regression import MeanSquaredLogError
 import sklearn.metrics
+from sklearn.metrics import precision_recall_curve, auc
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
 from utils.plots import density_plot, histogram_with_kde
@@ -31,7 +32,7 @@ class RelapseDetection():
         self.spd = samples_per_day
 
         # define the model --> Convolutional Autoencoder
-        self.model = Autoencoder(self.window_size)
+        self.model = Autoencoder()
 
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -45,18 +46,15 @@ class RelapseDetection():
         return torch.utils.data.dataloader.default_collate(batch)
 
     def test(self, model, flag, loader, device, patient_dir):
-        print('patient dir:', patient_dir)
         model.eval()
         originals, reconstructions = list(), list()
         batch_counter = 0
         filename = ''
 
         for _, data in enumerate(loader, 0):
-            print(data[1])
             feature_vector = data[0]
             if flag==True:
                 location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
-                print('loc:', location)
                 if os.path.exists(location) == False:
                     os.makedirs(location)
                 filename = location + data[1][0].split('/')[-1]
@@ -75,6 +73,23 @@ class RelapseDetection():
 
     def calculate_average(self, lst):
         return sum(lst) / len(lst)
+
+    def common_data(self, list1, list2):
+        result = False
+    
+        # traverse in the 1st list
+        for x in list1:
+    
+            # traverse in the 2nd list
+            for y in list2:
+    
+                # if one common
+                if x == y:
+                    print(x)
+                    result = True
+                    return result 
+                    
+        return result
 
     def run(self):
 
@@ -117,7 +132,7 @@ class RelapseDetection():
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
 
-        best_model = Autoencoder(self.window_size)
+        best_model = Autoencoder()
         state_dict = torch.load(self.checkpoint_path)
         best_model.load_state_dict(state_dict)
         best_model.to(self.device)
@@ -178,37 +193,28 @@ class RelapseDetection():
         ps = np.concatenate((p0, p1))
         ps_random = np.random.uniform(0, 1, len(ps))
         ys = np.concatenate((np.zeros(len(p0)), np.ones(len(p1))))
+        #ys = np.concatenate((np.zeros(len(p1)), np.ones(len(p0))))
         for i in range(len(ps)):
             print(ps[i], ys[i])
         # compute AUC:
         from sklearn.metrics import roc_auc_score
         print(np.mean(p0), np.mean(p1))
         print(ps_random)
-        print(f'AUC: {roc_auc_score(ys, ps)}')
-        print(f'AUC random: {roc_auc_score(ys, ps_random)}')
-
-        """# use plotly to plot the h0 and h1:
-        import plotly.graph_objects as go
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=b0, y=h0, name='val_0'))
-        fig.add_trace(go.Scatter(x=b1, y=h1, name='val_1'))
-        fig.update_layout(title='MSE distribution of val_0 and val_1', xaxis_title='MSE', yaxis_title='count')
-        fig.show()
-
-        # show ps and ps_random histograms:
-        fig = go.Figure()
-        h0, b0 = np.histogram(p0, bins=10)
-        h1, b1 = np.histogram(p1, bins=10)
-
-        b0 = (b0[:-1] + b0[1:]) / 2
-        b1 = (b1[:-1] + b1[1:]) / 2
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=b0, y=h0, name='val_0'))
-        fig.add_trace(go.Scatter(x=b1, y=h1, name='val_1'))
-        fig.update_layout(title='MSE distribution of val_0 and val_1', xaxis_title='MSE', yaxis_title='count')
-        fig.show()"""
+        print(f'ROC AUC: {roc_auc_score(ys, ps)}')
+        print(f'ROC AUC random: {roc_auc_score(ys, ps_random)}')
 
 
+        # Data to plot precision - recall curve
+        precision, recall, thresholds = precision_recall_curve(ys, ps)
+        # Use AUC function to calculate the area under the curve of precision recall curve
+        auc_precision_recall = auc(recall, precision)
+        print(f'PR AUC: {auc_precision_recall}')
+
+        # Data to plot precision - recall curve
+        precision_random, recall_random, thresholds = precision_recall_curve(ys, ps_random)
+        # Use AUC function to calculate the area under the curve of precision recall curve
+        auc_precision_recall_random = auc(recall_random, precision_random)
+        print(f'PR AUC random: {auc_precision_recall_random}')
 
 
 
@@ -273,7 +279,7 @@ if __name__=='__main__':
         required=False,
         default=5,
         type=int,
-        help="number of 5 minute intervals to use during training",
+        help="number of day samples to use during training",
     )
 
     args = parser.parse_args()

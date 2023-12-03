@@ -29,7 +29,7 @@ class RelapseDetection():
         self.spd = samples_per_day
 
         # define the model --> Convolutional Autoencoder
-        self.model = Autoencoder(self.window_size)
+        self.model = Autoencoder()
 
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -59,6 +59,7 @@ class RelapseDetection():
 
             optimizer.zero_grad()
             output = self.model(feature_vector)
+            #print('out:', output)
 
             loss = criterion(output, feature_vector)
             loss.backward()
@@ -67,8 +68,8 @@ class RelapseDetection():
             running_loss += loss.item()
         
         epoch_loss = running_loss / batch_counter
-        if optimizer.param_groups[0]["lr"] > 5e-5:
-            self.scheduler.step()
+        """if optimizer.param_groups[0]["lr"] > 5e-5:
+            self.scheduler.step(epoch_loss)"""
 
         if (epoch%50 == 0):
             print(f'Learning rate at epoch {epoch}: {optimizer.param_groups[0]["lr"]}')
@@ -76,7 +77,7 @@ class RelapseDetection():
         print('Epoch [{}], Training Loss: {:.4f}'.format(epoch, epoch_loss))
 
     
-    def validate(self, model, criterion, loader, device, epoch):
+    def validate(self, model, criterion, loader, device, epoch, optimizer):
 
         self.model.eval() # switch into evaluation mode
         running_loss = 0 # define loss
@@ -99,6 +100,9 @@ class RelapseDetection():
             running_loss += loss.item()
         
         epoch_loss = running_loss / batch_counter
+
+        if optimizer.param_groups[0]["lr"] > 5e-5:
+            self.scheduler.step(epoch_loss)
 
         if (epoch_loss < self.best_loss):
             self.best_loss = epoch_loss
@@ -185,18 +189,19 @@ class RelapseDetection():
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.995)
+        #self.scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.995)
+        self.scheduler = lr_scheduler.ReduceLROnPlateau(optimizer,factor=0.1, patience=3, cooldown=1, min_lr=1e-5, verbose=True)
 
         self.early_stopping_counter = 0
         self.best_loss = 100000 # just a random large value
 
         for epoch in range(self.epochs):
             self.train(self.model, criterion, optimizer, train_loader, self.device, epoch)
-            self.validate(self.model, criterion, val_loader, self.device, epoch)
+            self.validate(self.model, criterion, val_loader, self.device, epoch, optimizer)
             print('early stopping counter:', self.early_stopping_counter)
             if ((self.early_stopping_counter >= self.early_stopping_patience) or (epoch == (self.epochs - 1))):
                 print(f'Training ended. Best MSE loss on validation data {self.best_loss}')
-                best_model = Autoencoder(self.window_size)
+                best_model = Autoencoder()
                 state_dict = torch.load(self.BEST_MODEL_PATH)
                 best_model.load_state_dict(state_dict)
                 best_model.to(self.device)
@@ -284,7 +289,7 @@ if __name__=='__main__':
         "-ep",
         "--epochs",
         required=False,
-        default=1500,
+        default=500,
         type=int,
         help="number of epochs to train for",
     )

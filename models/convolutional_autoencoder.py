@@ -5,7 +5,7 @@ import numpy as np
 
 # Define the autoencoder architecture
 class Autoencoder(nn.Module):
-    def __init__(self, ws):
+    def __init__(self):
         super(Autoencoder, self).__init__()
         self.encoder = nn.Sequential(
             nn.Conv2d(1, 8, kernel_size=(3, 3), stride=1, padding=1),
@@ -27,18 +27,21 @@ class Autoencoder(nn.Module):
                                stride=2, 
                                padding=0,
                                output_padding=0),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             nn.ConvTranspose2d(16, 8, 
                                kernel_size=(3, 3), 
                                stride=2, 
                                padding=(1,0),
                                output_padding=0),
+            nn.BatchNorm2d(8),
             nn.ReLU(),
             nn.ConvTranspose2d(8, 1, 
                                kernel_size=(3, 3), 
                                stride=2, 
                                padding=(1, 0),
-                               output_padding=(1,0)),               
+                               output_padding=(1,0)),    
+            nn.BatchNorm2d(1),           
             nn.ReLU()
         )
 
@@ -47,6 +50,6 @@ class Autoencoder(nn.Module):
         x = self.encoder(x)
         if flag:
             with open(save_path + '.npy', 'wb') as f:
-                np.save(f, x.detach().numpy())
+                np.save(f, x.cpu().detach().numpy())
         x = self.decoder(x)
         return x

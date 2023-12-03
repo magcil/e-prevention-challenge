@@ -18,6 +18,7 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         self.patient_dir = patient_dir
         self.window_size = window_size
         self.split = split
+        self.state = state
         self.spd = spd
 
         # Normalize dataframe columns
@@ -25,10 +26,7 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         
         self.norm_save_dir = self.patient_dir + f'/norm_features_{self.split}_{state}'
         normalize_cols(self.features_paths, self.split, self.norm_save_dir)
-        #self.normalized_feat_paths = self.spd * os.listdir(self.norm_save_dir)
         self.normalized_feat_paths = [item for item in os.listdir(self.norm_save_dir) for _ in range(self.spd)]
-
-        #print(f'{split} normalized feat paths:', self.normalized_feat_paths)
 
         
         
@@ -49,8 +47,6 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
 
         day_df = pd.read_parquet(os.path.join(self.norm_save_dir, location), engine='fastparquet')
         day_df = day_df[self.ordered_columns] # forcing the column order as specified above
-
-        #print('day df columns:', day_df.columns)
 
 
         # drop DateTime column
