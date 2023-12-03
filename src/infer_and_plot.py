@@ -118,7 +118,10 @@ class RelapseDetection():
         criterion = torch.nn.MSELoss()
 
         best_model = Autoencoder(self.window_size)
-        state_dict = torch.load(self.checkpoint_path)
+        if self.device == torch.device('cpu'):
+            state_dict = torch.load(self.checkpoint_path, map_location=torch.device('cpu'))
+        else:
+            state_dict = torch.load(self.checkpoint_path)
         best_model.load_state_dict(state_dict)
         best_model.to(self.device)
 
