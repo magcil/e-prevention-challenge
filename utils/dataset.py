@@ -38,7 +38,7 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         
         
         self.ordered_columns = ['DateTime', 'heartRate_nanmean', 'rRInterval_nanmean', 'rRInterval_rmssd', 'rRInterval_sdnn',
-       'rRInterval_lombscargle_power_high', 'gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std', 'acc_mean', 'acc_std',
+       'aggr_sleep', 'interval_sleep', 'gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std', 'acc_mean', 'acc_std',
        'acc_delta_mean', 'acc_delta_std', 'sin_t', 'cos_t'] # specifying a standard column order
         
 

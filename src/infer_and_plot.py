@@ -120,7 +120,7 @@ class RelapseDetection():
             test_dataset_normal = RelapseDetectionDataset(test_paths[0], patient_dir, self.window_size, self.spd, train_means, train_stds, split='test', state='normal')
 
             test_loader_normal = torch.utils.data.DataLoader(dataset=test_dataset_normal, 
-                                                    batch_size=self.batch_size,
+                                                    batch_size=1,
                                                     shuffle=False,
                                                     collate_fn=self.collate_fn)
 
