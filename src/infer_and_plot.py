@@ -132,7 +132,7 @@ class RelapseDetection():
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
 
-        best_model = Autoencoder()
+        best_model = Autoencoder(self.window_size)
         state_dict = torch.load(self.checkpoint_path)
         best_model.load_state_dict(state_dict)
         best_model.to(self.device)
