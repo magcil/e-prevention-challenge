@@ -41,8 +41,7 @@ class Autoencoder(nn.Module):
                                stride=2, 
                                padding=(1, 0),
                                output_padding=(1,0)),    
-            nn.BatchNorm2d(1),           
-            nn.ReLU()
+            nn.BatchNorm2d(1),
         )
 
          

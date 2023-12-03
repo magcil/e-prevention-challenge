@@ -18,6 +18,7 @@ import scipy
 import matplotlib.pyplot as plt
 import argparse
 import seaborn as sns
+import pickle
 
 
 class RelapseDetection():
@@ -97,22 +98,26 @@ class RelapseDetection():
         train_paths, val_paths = split_train_val(self.train_features_path)
         test_paths = handle_dev(self.test_features_path)
 
+        train_means_path = self.checkpoint_path.split('.')[0] + '-means.pkl'
+        train_stds_path = self.checkpoint_path.split('.')[0] + '-stds.pkl'
+
+        file_to_read = open(train_means_path, "rb")
+        train_means = pickle.load(file_to_read)
+
+        file_to_read = open(train_stds_path, "rb")
+        train_stds = pickle.load(file_to_read)
+
         # Load dataset
-        train_dataset = RelapseDetectionDataset(train_paths, patient_dir, self.window_size, self.spd, split='train')
-        val_dataset = RelapseDetectionDataset(val_paths, patient_dir, self.window_size, self.spd, split='validation')
+        train_dataset = RelapseDetectionDataset(train_paths, patient_dir, self.window_size, self.spd, train_means, train_stds, split='train')
         
         # Define the dataloader
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
                                                 batch_size=self.batch_size, 
                                                 shuffle=False,
                                                 collate_fn=self.collate_fn)
-        val_loader = torch.utils.data.DataLoader(dataset=val_dataset, 
-                                                    batch_size=self.batch_size, 
-                                                    shuffle=False,
-                                                    collate_fn=self.collate_fn)
         
         if (not test_paths[0]) == False: # not 'list_name' returns True if the list is empty
-            test_dataset_normal = RelapseDetectionDataset(test_paths[0], patient_dir, self.window_size, self.spd, split='test', state='normal')
+            test_dataset_normal = RelapseDetectionDataset(test_paths[0], patient_dir, self.window_size, self.spd, train_means, train_stds, split='test', state='normal')
 
             test_loader_normal = torch.utils.data.DataLoader(dataset=test_dataset_normal, 
                                                     batch_size=self.batch_size,
@@ -120,7 +125,7 @@ class RelapseDetection():
                                                     collate_fn=self.collate_fn)
 
         if (not test_paths[1]) == False:
-            test_dataset_relapsed = RelapseDetectionDataset(test_paths[1], patient_dir, self.window_size, self.spd, split='test', state='relapsed')
+            test_dataset_relapsed = RelapseDetectionDataset(test_paths[1], patient_dir, self.window_size, self.spd, train_means, train_stds, split='test', state='relapsed')
 
             test_loader_relapsed = torch.utils.data.DataLoader(dataset=test_dataset_relapsed, 
                                                     batch_size=1,
@@ -132,7 +137,7 @@ class RelapseDetection():
         # Define the loss function and optimizer
         criterion = torch.nn.MSELoss()
 
-        best_model = Autoencoder(self.window_size)
+        best_model = Autoencoder()
         state_dict = torch.load(self.checkpoint_path)
         best_model.load_state_dict(state_dict)
         best_model.to(self.device)
@@ -193,7 +198,6 @@ class RelapseDetection():
         ps = np.concatenate((p0, p1))
         ps_random = np.random.uniform(0, 1, len(ps))
         ys = np.concatenate((np.zeros(len(p0)), np.ones(len(p1))))
-        #ys = np.concatenate((np.zeros(len(p1)), np.ones(len(p0))))
         for i in range(len(ps)):
             print(ps[i], ys[i])
         # compute AUC:

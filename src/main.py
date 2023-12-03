@@ -13,6 +13,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 import matplotlib.pyplot as plt
 import argparse
 import seaborn as sns
+import pickle
 
 
 class RelapseDetection():
@@ -157,29 +158,40 @@ class RelapseDetection():
         dev_paths = handle_dev(self.dev_features_path)
 
         # Load dataset
-        train_dataset = RelapseDetectionDataset(train_paths, train_patient_dir, self.window_size, self.spd, split='train')
-        val_dataset = RelapseDetectionDataset(val_paths, train_patient_dir, self.window_size, self.spd, split='validation')
+        _ = dict()
+        self.train_dataset = RelapseDetectionDataset(train_paths, train_patient_dir, self.window_size, self.spd, _, _, split='train', calc_norm=True)
+        self.val_dataset = RelapseDetectionDataset(val_paths, train_patient_dir, self.window_size, self.spd, self.train_dataset.means, self.train_dataset.stds, split='validation')
         
+        #torch.save(self.train_dataset.means, self.BEST_MODEL_PATH.split('.')[0] + '-means.pkl')
+        #torch.save(self.train_dataset.stds, self.BEST_MODEL_PATH.split('.')[0] + '-stds.pkl')
+
+        output = open(self.BEST_MODEL_PATH.split('.')[0] + '-means.pkl', 'wb')
+        pickle.dump(self.train_dataset.means, output)
+        output.close()
+
+        output = open(self.BEST_MODEL_PATH.split('.')[0] + '-stds.pkl', 'wb')
+        pickle.dump(self.train_dataset.stds, output)
+        output.close()
 
         # Define the dataloader
-        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
+        train_loader = torch.utils.data.DataLoader(dataset=self.train_dataset, 
                                                 batch_size=self.batch_size, 
                                                 shuffle=True,
                                                 collate_fn=self.collate_fn)
-        val_loader = torch.utils.data.DataLoader(dataset=val_dataset, 
+        val_loader = torch.utils.data.DataLoader(dataset=self.val_dataset, 
                                                     batch_size=self.batch_size, 
                                                     shuffle=False,
                                                     collate_fn=self.collate_fn)
         
         if (not dev_paths[0]) == False: # not 'list_name' returns True if the list is empty
-            dev_dataset = RelapseDetectionDataset(dev_paths[0], dev_patient_dir, self.window_size, 1, split='dev', state='normal')
-            dev_loader_normal = torch.utils.data.DataLoader(dataset=dev_dataset, 
+            self.dev_dataset = RelapseDetectionDataset(dev_paths[0], dev_patient_dir, self.window_size, 1, self.train_dataset.means, self.train_dataset.stds, split='dev', state='normal')
+            dev_loader_normal = torch.utils.data.DataLoader(dataset=self.dev_dataset, 
                                                     batch_size=self.batch_size,
                                                     collate_fn=self.collate_fn)
         
         if (not dev_paths[1]) == False: # not 'list_name' returns True if the list is empty
-            dev_dataset = RelapseDetectionDataset(dev_paths[1], dev_patient_dir, self.window_size, 1, split='dev', state='relapsed')
-            dev_loader_relapsed = torch.utils.data.DataLoader(dataset=dev_dataset, 
+            self.dev_dataset = RelapseDetectionDataset(dev_paths[1], dev_patient_dir, self.window_size, 1, self.train_dataset.means, self.train_dataset.stds, split='dev', state='relapsed')
+            dev_loader_relapsed = torch.utils.data.DataLoader(dataset=self.dev_dataset, 
                                                     batch_size=self.batch_size,
                                                     collate_fn=self.collate_fn)
         

@@ -12,7 +12,7 @@ pd.options.mode.chained_assignment = None
 
 class RelapseDetectionDataset(torch.utils.data.Dataset):
 
-    def __init__(self, features_paths, patient_dir, window_size, spd, split:str, state=''):
+    def __init__(self, features_paths, patient_dir, window_size, spd, train_mean:dict, train_std:dict, split:str, state='', calc_norm=False):
         
         self.features_paths = features_paths
         self.patient_dir = patient_dir
@@ -25,7 +25,14 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         print(f'Normalizing the {self.split} DataFrame columns. This might take some seconds...')
         
         self.norm_save_dir = self.patient_dir + f'/norm_features_{self.split}_{state}'
-        normalize_cols(self.features_paths, self.split, self.norm_save_dir)
+
+        if calc_norm:
+            means, stds = normalize_cols(self.features_paths, self.split, self.norm_save_dir, None, None, calc_norm)
+            self.means = means
+            self.stds = stds
+        else:
+            _, _ = normalize_cols(self.features_paths, self.split, self.norm_save_dir, train_mean, train_std)
+
         self.normalized_feat_paths = [item for item in os.listdir(self.norm_save_dir) for _ in range(self.spd)]
 
         
