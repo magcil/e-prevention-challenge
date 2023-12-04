@@ -51,24 +51,24 @@ class RelapseDetection():
         originals, reconstructions = list(), list()
         batch_counter = 0
         filename = ''
+        with torch.no_grad():
+            for _, data in enumerate(loader, 0):
+                feature_vector = data[0]
+                if flag==True:
+                    location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
+                    if os.path.exists(location) == False:
+                        os.makedirs(location)
+                    filename = location + data[1][0].split('/')[-1]
+                else:
+                    location = ''
+                batch_counter += 1
 
-        for _, data in enumerate(loader, 0):
-            feature_vector = data[0]
-            if flag==True:
-                location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
-                if os.path.exists(location) == False:
-                    os.makedirs(location)
-                filename = location + data[1][0].split('/')[-1]
-            else:
-                location = ''
-            batch_counter += 1
+                feature_vector = feature_vector.to(device)
 
-            feature_vector = feature_vector.to(device)
-
-            reconstruction = model(feature_vector, flag, filename)
-            
-            originals.append(feature_vector)
-            reconstructions.append(reconstruction)
+                reconstruction = model(feature_vector, flag, filename)
+                
+                originals.append(feature_vector)
+                reconstructions.append(reconstruction)
 
         return originals, reconstructions
 
@@ -192,8 +192,8 @@ class RelapseDetection():
         m = np.mean(mse_train)
         s = np.std(mse_train)
 
-        p0 = [1 - scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_0]
-        p1 = [1 - scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_1]
+        p0 = [scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_0]
+        p1 = [scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_1]
 
         ps = np.concatenate((p0, p1))
         ps_random = np.random.uniform(0, 1, len(ps))
