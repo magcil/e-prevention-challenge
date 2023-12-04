@@ -20,6 +20,10 @@ import argparse
 import seaborn as sns
 import pickle
 
+import warnings
+
+warnings.filterwarnings("ignore")
+
 
 class RelapseDetection():
 
@@ -49,26 +53,24 @@ class RelapseDetection():
     def test(self, model, flag, loader, device, patient_dir):
         model.eval()
         originals, reconstructions = list(), list()
-        batch_counter = 0
         filename = ''
+        with torch.no_grad():
+            for _, data in enumerate(loader, 0):
+                feature_vector = data[0]
+                if flag==True:
+                    location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
+                    if os.path.exists(location) == False:
+                        os.makedirs(location)
+                    filename = location + data[1][0].split('/')[-1]
+                else:
+                    location = ''
 
-        for _, data in enumerate(loader, 0):
-            feature_vector = data[0]
-            if flag==True:
-                location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
-                if os.path.exists(location) == False:
-                    os.makedirs(location)
-                filename = location + data[1][0].split('/')[-1]
-            else:
-                location = ''
-            batch_counter += 1
+                feature_vector = feature_vector.to(device)
 
-            feature_vector = feature_vector.to(device)
-            with torch.no_grad():
                 reconstruction = model(feature_vector, flag, filename)
-            
-            originals.append(feature_vector)
-            reconstructions.append(reconstruction)
+                
+                originals.append(feature_vector)
+                reconstructions.append(reconstruction)
 
         return originals, reconstructions
 

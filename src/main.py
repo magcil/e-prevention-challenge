@@ -15,6 +15,10 @@ import argparse
 import seaborn as sns
 import pickle
 
+import warnings
+
+warnings.filterwarnings("ignore")
+
 
 class RelapseDetection():
 
