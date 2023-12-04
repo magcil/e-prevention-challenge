@@ -192,8 +192,8 @@ class RelapseDetection():
         m = np.mean(mse_train)
         s = np.std(mse_train)
 
-        p0 = [scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_0]
-        p1 = [scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_1]
+        p0 = [1 - scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_0]
+        p1 = [1 - scipy.stats.norm(m, s).pdf(b) / scipy.stats.norm(m, s).pdf(m) for b in mse_val_1]
 
         ps = np.concatenate((p0, p1))
         ps_random = np.random.uniform(0, 1, len(ps))
