@@ -30,12 +30,8 @@ def handle_dev(dev_paths):
             day_idx = int(filename.split('.')[0].split('_')[1])
             if relapses.loc[relapses["day_index"]==day_idx]["relapse"].values[0] == 0:
                test_features_normal_paths.append(path + f'/{filename}')
-                
             else:
                 test_features_relapse_paths.append(path + f'/{filename}')
-        
-    print('TEST FEATURES NORMAL:', test_features_normal_paths)
-    print('TEST FEATURES RELAPSED:', test_features_relapse_paths)
 
     dev_features_paths = [test_features_normal_paths, test_features_relapse_paths]
     
