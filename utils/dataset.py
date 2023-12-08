@@ -59,7 +59,6 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
 
 
         if len(day_df) - self.window_size > 0:
-            start_ = random.randint(0, len(day_df)-self.window_size)
             fragment = fragment.sample(n=self.window_size).sort_index()
             rows = [row.to_list() for index, row in fragment.iterrows()]
 

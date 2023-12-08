@@ -311,7 +311,7 @@ if __name__=='__main__':
         "-ws",
         "--window_size",
         required=False,
-        default=50,
+        default=48,
         type=int,
         help="number of 5 minute intervals to use during training",
     )
