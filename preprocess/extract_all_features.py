@@ -14,7 +14,12 @@ from utils import parse as parser
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--track', type=int, choices=[1, 2], help='The track number.')
+    parser.add_argument('--track', type=int, choices=[1, 2], default=1, help='The track number.')
+    parser.add_argument('--patients',
+                        nargs='+',
+                        type=int,
+                        default=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+                        help='Patients to extract features')
     parser.add_argument('--dtypes',
                         nargs='+',
                         default=['hrm', 'gyr', 'linacc'],
@@ -37,10 +42,7 @@ if __name__ == '__main__':
     track_id = args.track
     dtypes = args.dtypes
 
-    if track_id == 1:
-        patients = list(range(1, 10))
-    elif track_id == 2:
-        patients = list(range(1, 8))
+    patients = args.patients
 
     p_bar = tqdm(patients, desc='Extracting features for each patient.', total=len(patients))
 

@@ -100,7 +100,7 @@ def extract_hr(df_hrm):
         df_hrm.dropna(inplace=True)
     else:
         # Determine all 5-Min intervals in a day and fill with nans
-        features = np.zeros(shape=(60 * 24 // 5, 4))
+        features = np.zeros(shape=(60 * 24 // 5, 5))
         features[:] = np.nan
         df_hrm = pd.DataFrame(features, index=pd.date_range(start_time, periods=60 * 24 // 5, freq="5Min"))
         df_hrm.columns = [
