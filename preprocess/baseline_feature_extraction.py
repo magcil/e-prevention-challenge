@@ -285,7 +285,7 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
 
     # Combine all
     all_df = pd.concat(all_df, axis=1, join='inner')
-    all_df = all_df.reset_index()
+    all_df = all_df.reset_index().rename(columns = {"index": "DateTime"})
 
     # Create time encodings
     h = all_df['DateTime'].dt.hour
