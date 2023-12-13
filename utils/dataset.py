@@ -1,10 +1,9 @@
 # Creating a custom dataset for reading the dataframe and loading it into the dataloader to pass it to the neural network at a later stage for finetuning the model and to prepare it for predictions
 import torch
-from torchvision import transforms
+
 import os
 import pandas as pd
-import math
-import random
+
 from utils.normalize import normalize_cols
 
 pd.options.mode.chained_assignment = None
@@ -27,11 +26,11 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
         self.norm_save_dir = self.patient_dir + f'/norm_features_{self.split}_{state}'
 
         if calc_norm:
-            means, stds = normalize_cols(self.features_paths, self.split, self.norm_save_dir, None, None, calc_norm)
+            means, stds = normalize_cols(self.features_paths, self.norm_save_dir, None, None, calc_norm)
             self.means = means
             self.stds = stds
         else:
-            _, _ = normalize_cols(self.features_paths, self.split, self.norm_save_dir, train_mean, train_std)
+            _, _ = normalize_cols(self.features_paths, self.norm_save_dir, train_mean, train_std)
 
         self.normalized_feat_paths = [item for item in os.listdir(self.norm_save_dir) for _ in range(self.spd)]
 
@@ -49,7 +48,6 @@ class RelapseDetectionDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         
         location = self.normalized_feat_paths[index]
-
         day_df = pd.read_parquet(os.path.join(self.norm_save_dir, location), engine='fastparquet')
         day_df = day_df[self.ordered_columns] # forcing the column order as specified above
 

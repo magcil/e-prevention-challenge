@@ -4,20 +4,15 @@ sys.path.insert(1, os.path.join(os.path.dirname(sys.path[0])))
 
 import torch
 import numpy as np
-from tqdm import tqdm
-from torchmetrics.regression import MeanSquaredLogError
-import sklearn.metrics
 from sklearn.metrics import precision_recall_curve, auc
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
-from utils.plots import density_plot, histogram_with_kde
+
 from utils.split import split_train_val, handle_dev
 from utils.calculate_scores import calculate_stats
-import torch.optim.lr_scheduler as lr_scheduler
+
 import scipy
-import matplotlib.pyplot as plt
 import argparse
-import seaborn as sns
 import pickle
 
 import warnings

@@ -3,16 +3,12 @@ import sys
 sys.path.insert(1, os.path.join(os.path.dirname(sys.path[0])))
 
 import torch
-import numpy as np
-from tqdm import tqdm
-from torchmetrics.regression import MeanSquaredLogError
+
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
 from utils.split import split_train_val, handle_dev
 import torch.optim.lr_scheduler as lr_scheduler
-import matplotlib.pyplot as plt
 import argparse
-import seaborn as sns
 import pickle
 
 import warnings
@@ -89,27 +85,27 @@ class RelapseDetection():
         batch_counter = 0 # define batch counter
 
         # and start the training loop!
-        
-        for _, data in enumerate(loader, 0):
-            feature_vector = data[0]
+        with torch.no_grad():
+            for _, data in enumerate(loader, 0):
+                feature_vector = data[0]
 
-            batch_counter += 1
+                batch_counter += 1
 
-            feature_vector = feature_vector.to(device)
+                feature_vector = feature_vector.to(device)
 
-            #optimizer.zero_grad()
-            output = self.model(feature_vector)
+                #optimizer.zero_grad()
+                output = self.model(feature_vector)
 
-            loss = criterion(output, feature_vector)
+                loss = criterion(output, feature_vector)
 
-            running_loss += loss.item()
+                running_loss += loss.item()
         
         epoch_loss = running_loss / batch_counter
 
         if optimizer.param_groups[0]["lr"] > 5e-5:
             self.scheduler.step(epoch_loss)
 
-        if (epoch_loss < self.best_loss):
+        if (epoch_loss < self.best_loss - 1e-6):
             self.best_loss = epoch_loss
             self.early_stopping_counter = 0
             # save model in order to retrieve at the end...
@@ -118,7 +114,7 @@ class RelapseDetection():
             self.early_stopping_counter += 1
 
         print('Epoch [{}], Validation Loss: {:.4f}'.format(epoch, epoch_loss))
-
+        return epoch_loss
 
     def test(self, model, loader, device):
         model.eval()
@@ -210,8 +206,9 @@ class RelapseDetection():
 
         for epoch in range(self.epochs):
             self.train(self.model, criterion, optimizer, train_loader, self.device, epoch)
-            self.validate(self.model, criterion, val_loader, self.device, epoch, optimizer)
-            print('early stopping counter:', self.early_stopping_counter)
+            epoch_loss = self.validate(self.model, criterion, val_loader, self.device, epoch, optimizer)
+            self.scheduler.step(epoch_loss)
+
             if ((self.early_stopping_counter >= self.early_stopping_patience) or (epoch == (self.epochs - 1))):
                 print(f'Training ended. Best MSE loss on validation data {self.best_loss}')
                 best_model = Autoencoder()
@@ -221,26 +218,33 @@ class RelapseDetection():
                 break
 
         print('Now predicting on unseen validation set...')
+        dev_criterion = torch.nn.MSELoss(reduction='none')  # 'none' to keep per-element losses
+
 
         if 'dev_loader_normal' in locals():
             originals, reconstructions = self.test(best_model, dev_loader_normal, self.device)
-            
-            anomaly_scores = [criterion(originals[i], reconstructions[i]).item() for i in range(len(originals))]
+            #anomaly_scores = dev_criterion(originals[0], reconstructions[0])
+            # Calculate mean squared error (MSE) loss per element for each sample
+            mse_loss_per_sample = dev_criterion(originals[0], reconstructions[0]).mean(dim=(2, 3))  # Reduction along height and width
 
-            print('Min MSE loss on dev data (normal state):', np.min(anomaly_scores))
-            print('Average MSE loss on dev data (normal state):', np.mean(anomaly_scores))
-            print('Median MSE loss on dev data (normal state):', np.median(anomaly_scores))
-            print('Max MSE loss on dev data (normal state):', np.max(anomaly_scores))
+
+            print('Min MSE loss on dev data (normal state):', mse_loss_per_sample.min().item())
+            print('Average MSE loss on dev data (normal state):', mse_loss_per_sample.mean().item())
+            print('Median MSE loss on dev data (normal state):', mse_loss_per_sample.median().item())
+            print('Max MSE loss on dev data (normal state):', mse_loss_per_sample.max().item())
         
         if 'dev_loader_relapsed' in locals():
             originals, reconstructions = self.test(best_model, dev_loader_relapsed, self.device)
             
-            anomaly_scores = [criterion(originals[i], reconstructions[i]).item() for i in range(len(originals))]
+            #anomaly_scores = dev_criterion(originals[0], reconstructions[0])
+            # Calculate mean squared error (MSE) loss per element for each sample
+            mse_loss_per_sample = dev_criterion(originals[0], reconstructions[0]).mean(dim=(2, 3))  # Reduction along height and width
 
-            print('Min MSE loss on dev data (relapsed state):', np.min(anomaly_scores))
-            print('Average MSE loss on dev data (relapsed state):', np.mean(anomaly_scores))
-            print('Median MSE loss on dev data (relapsed state):', np.median(anomaly_scores))
-            print('Max MSE loss on dev data (relapsed state):', np.max(anomaly_scores))
+
+            print('Min MSE loss on dev data (relapsed state):', mse_loss_per_sample.min().item())
+            print('Average MSE loss on dev data (relapsed state):', mse_loss_per_sample.mean().item())
+            print('Median MSE loss on dev data (relapsed state):', mse_loss_per_sample.median().item())
+            print('Max MSE loss on dev data (relapsed state):', mse_loss_per_sample.max().item())
       
 
 

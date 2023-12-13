@@ -1,7 +1,5 @@
 import pandas as pd
-import numpy as np
 import torch
-import math
 import os
 
 def split_train_val(train_paths):
@@ -12,7 +10,7 @@ def split_train_val(train_paths):
         for filename in os.listdir(path):
             train_features_paths.append(path + f'/{filename}')
 
-    train_val = torch.utils.data.random_split(train_features_paths, [math.floor(0.8 * len(train_features_paths)), math.ceil(0.2 * len(train_features_paths))], generator=torch.Generator().manual_seed(42))
+    train_val = torch.utils.data.random_split(train_features_paths, [0.8, 0.2], generator=torch.Generator().manual_seed(42))
 
     train, val = list(train_val[0]), list(train_val[1])
 

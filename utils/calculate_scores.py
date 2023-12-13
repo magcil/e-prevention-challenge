@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 
 def calculate_stats(originals, reconstructions, criterion, set=''):
 
