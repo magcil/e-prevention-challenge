@@ -69,5 +69,6 @@ tqdm==4.66.1
 traitlets==5.13.0
 typing_extensions==4.8.0
 tzdata==2023.3
-urllib3==2.1.0
 wcwidth==0.2.9
+tqdm==4.66.1
+plotly==5.18.0

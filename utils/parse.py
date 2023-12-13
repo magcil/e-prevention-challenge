@@ -111,8 +111,13 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
 def get_unique_days(track: int, patient: int, mode: str, num: int):
     df_1 = parse_data(track, patient, mode, num, "hrm")
     df_2 = parse_data(track, patient, mode, num, "gyr")
+    df_3 = parse_data(track, patient, mode, num, "linacc")
 
-    return np.intersect1d(df_1['day_index'].unique(), df_2['day_index'].unique(), assume_unique=True)
+    return np.intersect1d(ar1=df_3['day_index'].unique(),
+                          ar2=np.intersect1d(ar1=df_1['day_index'].unique(),
+                                             ar2=df_2['day_index'].unique(),
+                                             assume_unique=True),
+                          assume_unique=True)
 
 
 def parse_dtypes(track: int, patient: int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
@@ -120,16 +125,23 @@ def parse_dtypes(track: int, patient: int, mode: str, num: int, dtypes: List[str
     return {dtype: parse_data(track, patient, mode, num, dtype) for dtype in dtypes}
 
 
-def get_features(track_id: int, patient_id: Optional[int] = None, mode: Optional[str] = None, extension=".parquet"):
+def get_features(track_id: int, patient_id: int, mode: str, num: Optional[int] = None, extension=".parquet"):
     """Get all features for the specified path"""
-    path = get_path(track=track_id, patient=patient_id, mode=mode)
-    subdirs = [dir[0] for dir in os.walk(path)]
+
     tree = []
 
-    for dir in subdirs:
-        files = next(os.walk(dir))[2]
+    if num != None:
+        path = get_path(track=track_id, patient=patient_id, mode=mode, num=num)
+        files = next(os.walk(path + "/features"))[2]
         for _file in files:
             if _file.endswith(extension) and _file.startswith("day"):
-                tree.append(os.path.join(dir, _file))
-                print(tree[-1])
+                tree.append(os.path.join(path + "/features", _file))
+    else:
+        path = get_path(track=track_id, patient=patient_id)
+        target_dirs = [dir[0] for dir in os.walk(path) if os.path.basename(dir[0]).startswith(mode)]
+        for dir in target_dirs:
+            files = next(os.walk(dir + "/features"))[2]
+            for _file in files:
+                if _file.endswith(extension) and _file.startswith("day"):
+                    tree.append(os.path.join(dir + "/features", _file))
     return tree
