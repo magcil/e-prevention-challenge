@@ -146,6 +146,7 @@ def validation_loop(train_dset, test_dset, model, device):
 
     return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
 
+
 if __name__ == '__main__':
 
     # Parse args
@@ -234,8 +235,9 @@ if __name__ == '__main__':
             model = get_model(model_str=model_str)
 
             # Get patient's path to store pt files
-            pt_file = os.path.join(path_of_pt_files,
-                                   f"Track_{track_id}_P{patient_id}_" + model_str + "_" + datetime.today() + ".pt")
+            pt_file = os.path.join(
+                path_of_pt_files,
+                f"Track_{track_id}_P{patient_id}_" + model_str + "_" + str(datetime.today().date()) + ".pt")
 
             # Start training
             rec_loss_train = train_loop(train_dset=train_dset,
@@ -278,7 +280,7 @@ if __name__ == '__main__':
             results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
 
             val_losses = val_results['scores']['val_loss'].to_numpy()
-            labels = val_results['scores']['label'].tolist()
+            labels = val_results['scores']['label'].to_numpy()
             anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
             anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
 
@@ -307,10 +309,10 @@ if __name__ == '__main__':
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + datetime.today() + ".csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + ".csv")
 
             patient_path = parser.get_path(track_id, patient_id)
 
             for split in val_results['split']:
                 filt_df = val_results['scores'].loc[split]
-                filt_df.to_csv(os.path.join(patient_path, split, f"results_{model_str}_{datetime.today()}.csv"))
+                filt_df.to_csv(os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
