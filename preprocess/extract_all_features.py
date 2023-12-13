@@ -4,7 +4,6 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
 from tqdm import tqdm
 
 from preprocess.baseline_feature_extraction import extract_user_features
