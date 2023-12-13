@@ -285,20 +285,24 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
 
     # Combine all
     all_df = pd.concat(all_df, axis=1, join='inner')
-    all_df = all_df.reset_index().rename(columns = {"index": "DateTime"})
+    all_df = all_df.reset_index().rename(columns={"index": "DateTime"})
 
-    # Create time encodings
-    h = all_df['DateTime'].dt.hour
-    m = all_df['DateTime'].dt.minute
-    time_value = h * 60 + m
-    all_df['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
-    all_df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
+    # Append sleep features if all_df is non empty
+    if not all_df.empty:
+        # Create time encodings
+        h = all_df['DateTime'].dt.hour
+        m = all_df['DateTime'].dt.minute
+        time_value = h * 60 + m
+        all_df['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
+        all_df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
-    # Extract sleep features
-    if 'sleep' in df_dicts.keys():
-        FEATURE_FUNC['sleep'](all_df, df_dicts['sleep'], day_index=day_index)
-    # Drop Nan Values
-    return all_df
+        # Extract sleep features
+        if 'sleep' in df_dicts.keys():
+            FEATURE_FUNC['sleep'](all_df, df_dicts['sleep'], day_index=day_index)
+        # Drop Nan Values
+        return all_df
+    else:
+        return all_df
 
 
 # function that does feature extraction for a patient
@@ -333,12 +337,15 @@ def extract_user_features(track: Optional[int] = None,
 
     for day in p_bar:
         day_features = extract_day_features(full_dfs, day_index=day)
-        if output_format == 'parquet':
-            out_file = path_to_save + f"/day_{day:02}.parquet"
-            day_features.to_parquet(out_file, engine='fastparquet')
-        elif output_format == 'csv':
-            out_file = path_to_save + f"/day_{day:02}.csv"
-            day_features.to_csv(out_file)
+        if not day_features.empty:
+            if output_format == 'parquet':
+                out_file = path_to_save + f"/day_{day:02}.parquet"
+                day_features.to_parquet(out_file, engine='fastparquet')
+            elif output_format == 'csv':
+                out_file = path_to_save + f"/day_{day:02}.csv"
+                day_features.to_csv(out_file)
+        else:
+            continue
         p_bar.set_postfix({"Day": f"{day} | {days[-1]}"})
 
 
