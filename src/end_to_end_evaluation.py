@@ -188,7 +188,10 @@ if __name__ == '__main__':
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
         # Initialize patient's dataset and split to train/val -> Same split for each model
-        X = parser.get_features(track_id=track_id, patient_id=patient_id, mode="train")
+        X = parser.get_features(track_id=track_id,
+                                patient_id=patient_id,
+                                mode="train",
+                                extension=json_config['file_format'])
 
         X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
 
