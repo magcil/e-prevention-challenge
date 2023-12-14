@@ -1,5 +1,6 @@
 import os
 import sys
+
 sys.path.insert(1, os.path.join(os.path.dirname(sys.path[0])))
 
 import torch
@@ -22,7 +23,8 @@ warnings.filterwarnings("ignore")
 
 class RelapseDetection():
 
-    def __init__(self, train_feats_path, test_feats_path, checkpoint_path, batch_size, window_size, save_enc, samples_per_day):
+    def __init__(self, train_feats_path, test_feats_path, checkpoint_path, batch_size, window_size, save_enc,
+                 samples_per_day, format):
         self.train_features_path = train_feats_path
         self.test_features_path = test_feats_path
         self.checkpoint_path = checkpoint_path
@@ -30,6 +32,7 @@ class RelapseDetection():
         self.window_size = int(window_size)
         self.save_enc = save_enc
         self.spd = samples_per_day
+        self.format = format
 
         # define the model --> Convolutional Autoencoder
         self.model = Autoencoder()
@@ -37,7 +40,7 @@ class RelapseDetection():
     def select_device(self):
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         return device
-    
+
     # add a collate fn which ignores None
     def collate_fn(self, batch):
         batch = [x for x in batch if x is not None]
@@ -52,7 +55,7 @@ class RelapseDetection():
         with torch.no_grad():
             for _, data in enumerate(loader, 0):
                 feature_vector = data[0]
-                if flag==True:
+                if flag == True:
                     location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
                     if os.path.exists(location) == False:
                         os.makedirs(location)
@@ -63,7 +66,7 @@ class RelapseDetection():
                 feature_vector = feature_vector.to(device)
 
                 reconstruction = model(feature_vector, flag, filename)
-                
+
                 originals.append(feature_vector)
                 reconstructions.append(reconstruction)
 
@@ -74,19 +77,19 @@ class RelapseDetection():
 
     def common_data(self, list1, list2):
         result = False
-    
+
         # traverse in the 1st list
         for x in list1:
-    
+
             # traverse in the 2nd list
             for y in list2:
-    
+
                 # if one common
                 if x == y:
                     print(x)
                     result = True
-                    return result 
-                    
+                    return result
+
         return result
 
     def run(self):
@@ -105,30 +108,53 @@ class RelapseDetection():
         train_stds = pickle.load(file_to_read)
 
         # Load dataset
-        train_dataset = RelapseDetectionDataset(train_paths, patient_dir, self.window_size, self.spd, train_means, train_stds, split='train')
-        
-        # Define the dataloader
-        train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
-                                                batch_size=self.batch_size, 
-                                                shuffle=False,
-                                                collate_fn=self.collate_fn)
-        
-        if (not test_paths[0]) == False: # not 'list_name' returns True if the list is empty
-            test_dataset_normal = RelapseDetectionDataset(test_paths[0], patient_dir, self.window_size, self.spd, train_means, train_stds, split='test', state='normal')
+        train_dataset = RelapseDetectionDataset(train_paths,
+                                                patient_dir,
+                                                self.window_size,
+                                                self.spd,
+                                                train_means,
+                                                train_stds,
+                                                split='train',
+                                                format=self.format)
 
-            test_loader_normal = torch.utils.data.DataLoader(dataset=test_dataset_normal, 
-                                                    batch_size=1,
-                                                    shuffle=False,
-                                                    collate_fn=self.collate_fn)
+        # Define the dataloader
+        train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+                                                   batch_size=self.batch_size,
+                                                   shuffle=False,
+                                                   collate_fn=self.collate_fn)
+
+        if (not test_paths[0]) == False:  # not 'list_name' returns True if the list is empty
+            test_dataset_normal = RelapseDetectionDataset(test_paths[0],
+                                                          patient_dir,
+                                                          self.window_size,
+                                                          self.spd,
+                                                          train_means,
+                                                          train_stds,
+                                                          split='test',
+                                                          state='normal',
+                                                          format=self.format)
+
+            test_loader_normal = torch.utils.data.DataLoader(dataset=test_dataset_normal,
+                                                             batch_size=1,
+                                                             shuffle=False,
+                                                             collate_fn=self.collate_fn)
 
         if (not test_paths[1]) == False:
-            test_dataset_relapsed = RelapseDetectionDataset(test_paths[1], patient_dir, self.window_size, self.spd, train_means, train_stds, split='test', state='relapsed')
+            test_dataset_relapsed = RelapseDetectionDataset(test_paths[1],
+                                                            patient_dir,
+                                                            self.window_size,
+                                                            self.spd,
+                                                            train_means,
+                                                            train_stds,
+                                                            split='test',
+                                                            state='relapsed',
+                                                            format=self.format)
 
-            test_loader_relapsed = torch.utils.data.DataLoader(dataset=test_dataset_relapsed, 
-                                                    batch_size=1,
-                                                    shuffle=False,
-                                                    collate_fn=self.collate_fn)
-        
+            test_loader_relapsed = torch.utils.data.DataLoader(dataset=test_dataset_relapsed,
+                                                               batch_size=1,
+                                                               shuffle=False,
+                                                               collate_fn=self.collate_fn)
+
         self.device = self.select_device()
 
         # Define the loss function and optimizer
@@ -142,28 +168,42 @@ class RelapseDetection():
         anomalies_mse = list()
 
         print('Predict on train data')
-        originals_train, reconstructions_train = self.test(best_model, self.save_enc, train_loader, self.device, patient_dir)
+        originals_train, reconstructions_train = self.test(best_model, self.save_enc, train_loader, self.device,
+                                                           patient_dir)
 
         anomaly_scores_train = calculate_stats(originals_train, reconstructions_train, criterion, 'train')
-        mse_train = [self.calculate_average(anomaly_scores_train[i:i+self.spd]) for i in range(0, len(anomaly_scores_train), self.spd)]
+        mse_train = [
+            self.calculate_average(anomaly_scores_train[i:i + self.spd])
+            for i in range(0, len(anomaly_scores_train), self.spd)
+        ]
         anomalies_mse.append(mse_train)
 
         print('Now predicting on test set...')
 
         if 'test_loader_normal' in locals():
-            originals_val_normal, reconstructions_val_normal = self.test(best_model, self.save_enc, test_loader_normal, self.device, patient_dir)            
+            originals_val_normal, reconstructions_val_normal = self.test(best_model, self.save_enc, test_loader_normal,
+                                                                         self.device, patient_dir)
 
-            anomaly_scores_val_normal = calculate_stats(originals_val_normal, reconstructions_val_normal, criterion, 'val normal')
-            mse_val_0 = [self.calculate_average(anomaly_scores_val_normal[i:i+self.spd]) for i in range(0, len(anomaly_scores_val_normal), self.spd)]
+            anomaly_scores_val_normal = calculate_stats(originals_val_normal, reconstructions_val_normal, criterion,
+                                                        'val normal')
+            mse_val_0 = [
+                self.calculate_average(anomaly_scores_val_normal[i:i + self.spd])
+                for i in range(0, len(anomaly_scores_val_normal), self.spd)
+            ]
             anomalies_mse.append(mse_val_0)
-        
-        if 'test_loader_relapsed' in locals():
-            originals_val_relapsed, reconstructions_val_relapsed = self.test(best_model, self.save_enc, test_loader_relapsed, self.device, patient_dir)
 
-            anomaly_scores_val_relapsed = calculate_stats(originals_val_relapsed, reconstructions_val_relapsed, criterion, 'val relapsed')
-            mse_val_1 = [self.calculate_average(anomaly_scores_val_relapsed[i:i+self.spd]) for i in range(0, len(anomaly_scores_val_relapsed), self.spd)]
+        if 'test_loader_relapsed' in locals():
+            originals_val_relapsed, reconstructions_val_relapsed = self.test(best_model, self.save_enc,
+                                                                             test_loader_relapsed, self.device,
+                                                                             patient_dir)
+
+            anomaly_scores_val_relapsed = calculate_stats(originals_val_relapsed, reconstructions_val_relapsed,
+                                                          criterion, 'val relapsed')
+            mse_val_1 = [
+                self.calculate_average(anomaly_scores_val_relapsed[i:i + self.spd])
+                for i in range(0, len(anomaly_scores_val_relapsed), self.spd)
+            ]
             anomalies_mse.append(anomaly_scores_val_relapsed)
-        
         """density_plot(to_plot=anomalies_mse,
                     labels=["MSE train","MSE val_0 (normal)", "MSE val_1 (relapsed)"],
                     colors=["dodgerblue", "deeppink", "gold"],
@@ -199,11 +239,11 @@ class RelapseDetection():
             print(ps[i], ys[i])
         # compute AUC:
         from sklearn.metrics import roc_auc_score
-        print(np.mean(p0), np.mean(p1))
+        print(f"Mean anomaly score (non relapsed): {np.mean(p0)}, Mean anomaly score (relapsed): {np.mean(p1)}")
+        print(f"Total days non relapsed: {len(p0)} | Total days on relapsed: {len(p1)}")
         print(ps_random)
         print(f'ROC AUC: {roc_auc_score(ys, ps)}')
         print(f'ROC AUC random: {roc_auc_score(ys, ps_random)}')
-
 
         # Data to plot precision - recall curve
         precision, recall, thresholds = precision_recall_curve(ys, ps)
@@ -218,18 +258,15 @@ class RelapseDetection():
         print(f'PR AUC random: {auc_precision_recall_random}')
 
 
-
-if __name__=='__main__':
+if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "-tp",
-        "--train_features_path",
-        required=True,
-        nargs='+',
-        help="path to folder where training .parquet files are contained (one for each day)"
-    )
+    parser.add_argument("-tp",
+                        "--train_features_path",
+                        required=True,
+                        nargs='+',
+                        help="path to folder where training .parquet files are contained (one for each day)")
 
     parser.add_argument(
         "-tep",
@@ -254,7 +291,6 @@ if __name__=='__main__':
         type=int,
         help="batch size for training, validation and test processes",
     )
-
 
     parser.add_argument(
         "-ws",
@@ -283,15 +319,15 @@ if __name__=='__main__':
         help="number of day samples to use during training",
     )
 
+    parser.add_argument('-f',
+                        '--file_format',
+                        choices=['parquet', 'csv'],
+                        default='parquet',
+                        help='The file format of the features.')
+
     args = parser.parse_args()
 
+    obj = RelapseDetection(args.train_features_path, args.test_features_path, args.checkpoint_path, args.batch_size,
+                           args.window_size, args.save_encodings, args.samples_per_day, args.file_format)
 
-    obj = RelapseDetection(args.train_features_path,
-                           args.test_features_path,
-                           args.checkpoint_path,
-                           args.batch_size,
-                           args.window_size,
-                           args.save_encodings,
-                           args.samples_per_day)
-    
     obj.run()
