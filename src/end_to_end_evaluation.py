@@ -39,12 +39,12 @@ def get_model(model_str: str):
     return model
 
 
-def train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device):
+def train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device, num_workers):
 
     # Initialize dataloaders & optimizers
     model = model.to(device)
-    train_dloader = DataLoader(train_dset, batch_size=batch_size, shuffle=True, num_workers=1)
-    val_dloader = DataLoader(val_dset, batch_size=batch_size, shuffle=False, num_workers=1)
+    train_dloader = DataLoader(train_dset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_dloader = DataLoader(val_dset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     optim = Adam(model.parameters(), lr=learning_rate)
     lr_scheduler = CosineAnnealingLR(optimizer=optim, T_max=epochs, eta_min=1e-5)
     ear_stopping = EarlyStopping(patience=patience, verbose=True, path=pt_file)
@@ -177,8 +177,8 @@ if __name__ == '__main__':
         "Distribution Loss (std)": [],
         "ROC AUC": [],
         "PR AUC": [],
-        "Probability (relapsed)": [],
-        "Probability (non relapsed)": [],
+        "Mean anomaly score (relapsed)": [],
+        "Mean anomaly score (non relapsed)": [],
         "ROC AUC (random)": [],
         "PR AUC (random)": [],
         "Total days on train": [],
@@ -237,6 +237,11 @@ if __name__ == '__main__':
         for model_str in tqdm(models, desc="Validating model", leave=False):
             model = get_model(model_str=model_str)
 
+            # Check for model transfer learning / works when only one model is given
+            if "transfer_learning" in json_config.keys():
+                model.load_state_dict(torch.load(json_config["transfer_learning"]))
+                print("Transfer learning from all data.")
+
             # Get patient's path to store pt files
             pt_file = os.path.join(
                 path_of_pt_files,
@@ -251,7 +256,8 @@ if __name__ == '__main__':
                                         patience=json_config["patience"],
                                         learning_rate=json_config["learning_rate"],
                                         pt_file=pt_file,
-                                        device=device)
+                                        device=device,
+                                        num_workers=json_config['num_workers'])
 
             results["Rec Loss (train)"].append(rec_loss_train)
 
@@ -304,8 +310,8 @@ if __name__ == '__main__':
             results['Total days (non relapsed)'].append(len(labels[labels == 0]))
             results['Total days (relapsed)'].append(len(labels[labels == 1]))
 
-            results['Probability (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
-            results['Probability (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
+            results['Mean anomaly score (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
+            results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
 
             results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
             results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))
