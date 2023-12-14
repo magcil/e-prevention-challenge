@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.metrics import precision_recall_curve, auc
 from models.convolutional_autoencoder import Autoencoder
 from utils.dataset import RelapseDetectionDataset
+from tqdm import tqdm
 
 from utils.split import split_train_val, handle_dev
 from utils.calculate_scores import calculate_stats
@@ -54,7 +55,7 @@ class RelapseDetection():
         filename = ''
         with torch.no_grad():
             for _, data in enumerate(loader, 0):
-                feature_vector = data[0]
+                feature_vector, mask = data
                 if flag == True:
                     location = patient_dir + '/encodings' + os.path.dirname(data[1][0]).split('/')[-1] + '/'
                     if os.path.exists(location) == False:
@@ -64,8 +65,9 @@ class RelapseDetection():
                     location = ''
 
                 feature_vector = feature_vector.to(device)
+                mask = mask.to(device)
 
-                reconstruction = model(feature_vector, flag, filename)
+                reconstruction = model(feature_vector, flag, filename) * mask
 
                 originals.append(feature_vector)
                 reconstructions.append(reconstruction)
@@ -121,7 +123,8 @@ class RelapseDetection():
         train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                    batch_size=self.batch_size,
                                                    shuffle=False,
-                                                   collate_fn=self.collate_fn)
+                                                   collate_fn=self.collate_fn,
+                                                   num_workers=8)
 
         if (not test_paths[0]) == False:  # not 'list_name' returns True if the list is empty
             test_dataset_normal = RelapseDetectionDataset(test_paths[0],
@@ -137,7 +140,8 @@ class RelapseDetection():
             test_loader_normal = torch.utils.data.DataLoader(dataset=test_dataset_normal,
                                                              batch_size=1,
                                                              shuffle=False,
-                                                             collate_fn=self.collate_fn)
+                                                             collate_fn=self.collate_fn,
+                                                             num_workers=8)
 
         if (not test_paths[1]) == False:
             test_dataset_relapsed = RelapseDetectionDataset(test_paths[1],
@@ -153,7 +157,8 @@ class RelapseDetection():
             test_loader_relapsed = torch.utils.data.DataLoader(dataset=test_dataset_relapsed,
                                                                batch_size=1,
                                                                shuffle=False,
-                                                               collate_fn=self.collate_fn)
+                                                               collate_fn=self.collate_fn,
+                                                               num_workers=8)
 
         self.device = self.select_device()
 
@@ -241,9 +246,10 @@ class RelapseDetection():
         from sklearn.metrics import roc_auc_score
         print(f"Mean anomaly score (non relapsed): {np.mean(p0)}, Mean anomaly score (relapsed): {np.mean(p1)}")
         print(f"Total days non relapsed: {len(p0)} | Total days on relapsed: {len(p1)}")
-        print(ps_random)
-        print(f'ROC AUC: {roc_auc_score(ys, ps)}')
-        print(f'ROC AUC random: {roc_auc_score(ys, ps_random)}')
+        roc_auc = roc_auc_score(ys, ps)
+        roc_auc_random = roc_auc_score(ys, ps_random)
+        print(f'ROC AUC: {roc_auc}')
+        print(f'ROC AUC random: {roc_auc_random}')
 
         # Data to plot precision - recall curve
         precision, recall, thresholds = precision_recall_curve(ys, ps)
@@ -256,6 +262,13 @@ class RelapseDetection():
         # Use AUC function to calculate the area under the curve of precision recall curve
         auc_precision_recall_random = auc(recall_random, precision_random)
         print(f'PR AUC random: {auc_precision_recall_random}')
+
+        return {
+            "Roc Auc": roc_auc,
+            "Pr Auc": auc_precision_recall,
+            "Roc Auc (random)": roc_auc_random,
+            "Pr Auc (random)": auc_precision_recall_random
+        }
 
 
 if __name__ == '__main__':
@@ -325,9 +338,33 @@ if __name__ == '__main__':
                         default='parquet',
                         help='The file format of the features.')
 
+    parser.add_argument('-rep', '--repititions', type=int, default=1, help='Number of times to repeat the evaluation.')
+
     args = parser.parse_args()
+    reps = args.repititions
 
     obj = RelapseDetection(args.train_features_path, args.test_features_path, args.checkpoint_path, args.batch_size,
                            args.window_size, args.save_encodings, args.samples_per_day, args.file_format)
 
-    obj.run()
+    roc_auc, pr_auc, roc_auc_random, pr_auc_random = [], [], [], []
+
+    for rep in tqdm(range(1, reps + 1), desc="Repeating experiment"):
+        res = obj.run()
+
+        roc_auc.append(res['Roc Auc'])
+        pr_auc.append(res['Pr Auc'])
+        roc_auc_random.append(res['Roc Auc (random)'])
+        pr_auc_random.append(res['Pr Auc (random)'])
+
+    if reps > 1:
+        print("\nAggregated results")
+        print(f"Roc Auc: {100 * np.mean(roc_auc):.2f} (std: {100 * np.std(roc_auc):.2f})")
+        print(f"Pr Auc: {100 * np.mean(pr_auc):.2f} (std: {100 * np.std(pr_auc):.2f})")
+        print(f"Roc Auc random: {100 * np.mean(roc_auc_random):.2f} (std: {100 * np.std(roc_auc_random):.2f})")
+        print(f"Pr Auc random: {100 * np.mean(pr_auc_random):.2f} (std: {100 * np.std(pr_auc_random):.2f})")
+    else:
+        print("\n Results")
+        print(f"Roc Auc: {100 * np.mean(roc_auc):.2f}")
+        print(f"Pr Auc: {100 * np.mean(pr_auc):.2f}")
+        print(f"Roc Auc random: {100 * np.mean(roc_auc_random):.2f}")
+        print(f"Roc Auc random: {100 * np.mean(pr_auc_random):.2f}")

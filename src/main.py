@@ -55,14 +55,15 @@ class RelapseDetection():
         # and start the training loop!
 
         for _, data in enumerate(loader, 0):
-            feature_vector = data[0]
+            feature_vector, mask = data
 
             batch_counter += 1
 
             feature_vector = feature_vector.to(device)
+            mask = mask.to(device)
 
             optimizer.zero_grad()
-            output = self.model(feature_vector)
+            output = self.model(feature_vector) * mask
             #print('out:', output)
 
             loss = criterion(output, feature_vector)
@@ -89,14 +90,15 @@ class RelapseDetection():
         # and start the training loop!
         with torch.no_grad():
             for _, data in enumerate(loader, 0):
-                feature_vector = data[0]
+                feature_vector, mask = data
 
                 batch_counter += 1
 
                 feature_vector = feature_vector.to(device)
+                mask = mask.to(device)
 
                 #optimizer.zero_grad()
-                output = self.model(feature_vector)
+                output = self.model(feature_vector) * mask
 
                 loss = criterion(output, feature_vector)
 
@@ -123,12 +125,13 @@ class RelapseDetection():
         originals, reconstructions = list(), list()
         batch_counter = 0
         for _, data in enumerate(loader, 0):
-            feature_vector = data[0]
+            feature_vector, mask = data
             batch_counter += 1
 
             feature_vector = feature_vector.to(device)
+            mask = mask.to(device)
 
-            reconstruction = model(feature_vector)
+            reconstruction = model(feature_vector) * mask
 
             originals.append(feature_vector)
             reconstructions.append(reconstruction)
