@@ -86,6 +86,7 @@ if __name__ == '__main__':
                                   extension=json_config['file_format'],
                                   feature_mapping=json_config['feature_mapping'])
         train_dset._cal_statistics()
+        val_dset.mean, val_dset.std = train_dset.mean, train_dset.std
 
         train_dset._upsample_data(upsample_size=json_config['upsampling_size'])
         val_dset._upsample_data(upsample_size=json_config['upsampling_size'])

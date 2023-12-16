@@ -179,7 +179,7 @@ def classification_train_loop(train_dset, val_dset, model, epochs, batch_size, p
     model = model.to(device)
     train_dloader = DataLoader(train_dset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_dloader = DataLoader(val_dset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    optim = Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)
+    optim = Adam(model.parameters(), lr=learning_rate, weight_decay=1e-3)
     lr_scheduler = CosineAnnealingLR(optimizer=optim, T_max=epochs, eta_min=1e-6)
     ear_stopping = EarlyStopping(patience=patience, verbose=True, path=pt_file)
     loss_fn = nn.CrossEntropyLoss()
@@ -316,7 +316,7 @@ def validate_classification(train_dset, val_dset, model, batch_size, device, num
         f_splits.append(s)
         f_days.append(d)
 
-        f_posteriors.append(1 - df_f['posteriors'].mean())
+        f_posteriors.append(1 - df_f['posteriors'].min())
         f_anomalies.append(df_f[df_f['anomalies'] == -1].shape[0] / df_f.shape[0])
         f_labels.append(df_f['label'].iloc[0])
 
