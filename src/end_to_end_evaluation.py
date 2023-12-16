@@ -17,6 +17,8 @@ from sklearn.model_selection import train_test_split
 from datetime import datetime
 from scipy.stats import norm
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
+from sklearn.svm import OneClassSVM
+from sklearn.preprocessing import StandardScaler
 
 from models.convolutional_autoencoder import Autoencoder, UNet
 from datasets.dataset import PatientDataset
@@ -61,7 +63,8 @@ def train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learni
                 # Forward
                 org_features, mask = d["features"], d["mask"]
                 org_features, mask = org_features.to(device), mask.to(device)
-                reco_features = model(org_features) * mask
+                reco_features, _ = model(org_features)
+                reco_features = reco_features * mask
 
                 loss = loss_fn(org_features, reco_features)
                 train_loss += loss.item()
@@ -81,7 +84,8 @@ def train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learni
                     # Forward
                     org_features, mask = d["features"], d["mask"]
                     org_features, mask = org_features.to(device), mask.to(device)
-                    reco_features = model(org_features) * mask
+                    reco_features, _ = model(org_features)
+                    reco_features = reco_features * mask
 
                     loss = loss_fn(org_features, reco_features)
                     val_loss += loss.item()
@@ -101,26 +105,44 @@ def train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learni
     return best_val_loss
 
 
-def validation_loop(train_dset, test_dset, model, device):
+def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
     test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     loss_fn = nn.MSELoss().to(device=device)
     model = model.to(device)
 
+    # Check if one class SVM test is true
+    if one_class_test:
+        detector = OneClassSVM()
+        scaler = StandardScaler()
+
     # Loop over train and determine distribution
-    train_losses = []
+    train_losses, train_embeddings = [], []
     model.eval()
     with torch.no_grad():
         for d in train_dloader:
             # Inference
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
-            reco_features = model(features) * mask
+            reco_features, emb = model(features)
+            reco_features = reco_features * mask
+
+            if one_class_test:
+                train_embeddings.append(np.squeeze(emb.cpu().numpy()))
 
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
     # Calculate mean & std and fit Normal distribution
     mu, std = np.mean(train_losses), np.std(train_losses)
+
+    # Fit One class SVM
+    if one_class_test:
+        train_embeddings = np.vstack(train_embeddings)
+        scaler.fit(train_embeddings)
+        train_embeddings = scaler.transform(train_embeddings)
+        detector.fit(train_embeddings)
+
+        test_embeddings = []
 
     val_losses, splits, days, labels = [], [], [], []
     with torch.no_grad():
@@ -128,7 +150,11 @@ def validation_loop(train_dset, test_dset, model, device):
             # Inference
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
-            reco_features = model(features) * mask
+            reco_features, emb = model(features)
+            reco_features = reco_features * mask
+
+            if one_class_test:
+                test_embeddings.append(np.squeeze(emb.cpu().numpy()))
 
             loss = loss_fn(features, reco_features)
             val_losses.append(loss.item())
@@ -136,15 +162,34 @@ def validation_loop(train_dset, test_dset, model, device):
             days.append(d['day_index'].item())
             labels.append(d['label'].item())
 
-    df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
-    res = df.groupby(by=["split", "day_index"]).mean()
-    res['label'] = res['label'].astype(int)
-    res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
-    res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
+    # Exract anomaly score with MSE
+    if not one_class_test:
+        df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
+        res = df.groupby(by=["split", "day_index"]).mean()
+        res['label'] = res['label'].astype(int)
+        res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
+        res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
 
-    unique_splits = np.unique(splits).tolist()
+        unique_splits = np.unique(splits).tolist()
 
-    return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
+        return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
+
+    # Else with embeddings
+    else:
+        test_embeddings = scaler.transform(np.vstack(test_embeddings))
+        preds = detector.predict(test_embeddings)
+        split_day = [split + "_day" + str(day) for split, day in zip(splits, days)]
+        df_svm = pd.DataFrame({"split_day": split_day, "label": labels, "preds": preds})
+
+        anomaly_scores, labels = [], []
+        # Calculate anomaly score for each pair (split, day_index)
+
+        for s_d in np.unique(split_day):
+            df_svm_filt = df_svm[df_svm['split_day'] == s_d]
+            anomaly_scores.append(df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
+            labels.append(df_svm_filt['label'].iloc[0])
+
+        return {"anomaly_scores": np.array(anomaly_scores), "labels": np.array(labels, dtype=np.int64)}
 
 
 if __name__ == '__main__':
@@ -166,25 +211,41 @@ if __name__ == '__main__':
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # These are the results to display at the end of the experiment
-    results = {
-        "Patient_id": [],
-        "Model": [],
-        "Rec Loss (train)": [],
-        "Rec Loss (relapsed)": [],
-        "Rec Loss (non relapsed)": [],
-        "Distribution Loss (mean)": [],
-        "Distribution Loss (std)": [],
-        "ROC AUC": [],
-        "PR AUC": [],
-        "Mean anomaly score (relapsed)": [],
-        "Mean anomaly score (non relapsed)": [],
-        "ROC AUC (random)": [],
-        "PR AUC (random)": [],
-        "Total days on train": [],
-        "Total days (relapsed)": [],
-        "Total days (non relapsed)": []
-    }
+    # Check for One Class Svm test
+    if "one_class_test" in json_config.keys() and json_config['one_class_test'] == True:
+        results = {
+            "Patient_id": [],
+            "Model": [],
+            "Rec Loss (train)": [],
+            "ROC AUC": [],
+            "PR AUC": [],
+            "ROC AUC (random)": [],
+            "PR AUC (random)": [],
+            "Total days on train": [],
+            "Total days (relapsed)": [],
+            "Total days (non relapsed)": []
+        }
+        one_class_test = True
+    else:
+        # These are the results to display at the end of the experiment
+        results = {
+            "Patient_id": [],
+            "Model": [],
+            "Rec Loss (train)": [],
+            "Rec Loss (relapsed)": [],
+            "Rec Loss (non relapsed)": [],
+            "Distribution Loss (mean)": [],
+            "Distribution Loss (std)": [],
+            "ROC AUC": [],
+            "PR AUC": [],
+            "Mean anomaly score (relapsed)": [],
+            "Mean anomaly score (non relapsed)": [],
+            "ROC AUC (random)": [],
+            "PR AUC (random)": [],
+            "Total days on train": [],
+            "Total days (relapsed)": [],
+            "Total days (non relapsed)": []
+        }
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
         # Initialize patient's dataset and split to train/val -> Same split for each model
@@ -283,15 +344,19 @@ if __name__ == '__main__':
             test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
             # Get results and write outputs
-            val_results = validation_loop(train_dset, test_dset, model, device)
+            val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
 
-            results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
-            results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
+            if not one_class_test:
+                results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
+                results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
 
-            val_losses = val_results['scores']['val_loss'].to_numpy()
-            labels = val_results['scores']['label'].to_numpy()
-            anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
-            anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
+                val_losses = val_results['scores']['val_loss'].to_numpy()
+                labels = val_results['scores']['label'].to_numpy()
+                anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
+                anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
+            else:
+                anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
+                anomaly_scores_random = np.random.random(size=len(anomaly_scores))
 
             # Compute metrics
             precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
@@ -310,18 +375,20 @@ if __name__ == '__main__':
             results['Total days (non relapsed)'].append(len(labels[labels == 0]))
             results['Total days (relapsed)'].append(len(labels[labels == 1]))
 
-            results['Mean anomaly score (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
-            results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
-
-            results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
-            results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))
+            if not one_class_test:
+                results['Mean anomaly score (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
+                results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
+                results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
+                results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))
 
             # Write csvs
             final_df = pd.DataFrame(results)
             final_df.to_csv("results_" + str(datetime.today().date()) + ".csv")
 
-            patient_path = parser.get_path(track_id, patient_id)
+            if not one_class_test:
+                patient_path = parser.get_path(track_id, patient_id)
 
-            for split in val_results['split']:
-                filt_df = val_results['scores'].loc[split]
-                filt_df.to_csv(os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
+                for split in val_results['split']:
+                    filt_df = val_results['scores'].loc[split]
+                    filt_df.to_csv(
+                        os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))

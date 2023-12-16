@@ -41,6 +41,8 @@ class Autoencoder(nn.Module):
         x, index = self.pool3(x)
         indices.append(index)
 
+        emb = x
+
         if flag:
             with open(save_path + '.npy', 'wb') as f:
                 np.save(f, x.cpu().detach().numpy())
@@ -52,7 +54,7 @@ class Autoencoder(nn.Module):
         x = self.unpool3(x, indices[0])
         x = self.unconv3(x)
 
-        return x
+        return x, torch.flatten(x, start_dim=1)
 
 
 class Autoencoder_2(nn.Module):
