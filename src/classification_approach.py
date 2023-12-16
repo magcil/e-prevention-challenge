@@ -76,14 +76,14 @@ if __name__ == '__main__':
                                     patient_id=patient_id,
                                     mode="train",
                                     window_size=json_config['window_size'],
-                                    extension=json_config['extension'],
+                                    extension=json_config['file_format'],
                                     feature_mapping=json_config['feature_mapping'])
 
         val_dset = PatientDataset(track_id=json_config['track_id'],
                                   patient_id=patient_id,
                                   mode="val",
                                   window_size=json_config['window_size'],
-                                  extension=json_config['extension'],
+                                  extension=json_config['file_format'],
                                   feature_mapping=json_config['feature_mapping'])
         train_dset._cal_statistics()
 
@@ -101,9 +101,9 @@ if __name__ == '__main__':
         fpr, tpr, _ = roc_curve(df['label'], df['anomaly_scores_posteriors'])
         results['Patient_id'].append(patient_id)
         results['ROC AUC (posteriors)'].append(auc(fpr, tpr))
-        results['ROC AUC (SVM)'].append(auc(recall, precision))
+        results['PR AUC (posteriors)'].append(auc(recall, precision))
 
-        precision, recall = precision_recall_curve(df['label'], df['anomaly_scores_svm'])
+        precision, recall, _ = precision_recall_curve(df['label'], df['anomaly_scores_svm'])
         fpr, tpr, _ = roc_curve(df['label'], df['anomaly_scores_svm'])
 
         results['ROC AUC (SVM)'].append(auc(fpr, tpr))
