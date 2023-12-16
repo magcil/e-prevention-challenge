@@ -54,7 +54,7 @@ class Autoencoder(nn.Module):
         x = self.unpool3(x, indices[0])
         x = self.unconv3(x)
 
-        return x, torch.flatten(x, start_dim=1)
+        return x, torch.flatten(emb, start_dim=1)
 
 
 class Autoencoder_2(nn.Module):

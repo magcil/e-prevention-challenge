@@ -8,8 +8,6 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -17,13 +15,11 @@ from sklearn.model_selection import train_test_split
 from datetime import datetime
 from scipy.stats import norm
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
-from sklearn.svm import OneClassSVM
-from sklearn.preprocessing import StandardScaler
 
 from models.convolutional_autoencoder import Autoencoder, UNet
 from datasets.dataset import PatientDataset
-from callbacks.callbacks import EarlyStopping
 import utils.parse as parser
+from training.loops import autoencoder_train_loop, validation_loop
 
 
 def parse_args():
@@ -39,157 +35,6 @@ def get_model(model_str: str):
     elif model_str == 'UNet':
         model = UNet(in_channels=1, out_channels=1)
     return model
-
-
-def train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device, num_workers):
-
-    # Initialize dataloaders & optimizers
-    model = model.to(device)
-    train_dloader = DataLoader(train_dset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_dloader = DataLoader(val_dset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    optim = Adam(model.parameters(), lr=learning_rate)
-    lr_scheduler = CosineAnnealingLR(optimizer=optim, T_max=epochs, eta_min=1e-5)
-    ear_stopping = EarlyStopping(patience=patience, verbose=True, path=pt_file)
-    loss_fn = nn.MSELoss()
-    loss_fn = loss_fn.to(device=device)
-
-    train_loss, val_loss, best_val_loss = 0., 0., np.inf
-    _padding = len(str(epochs + 1))
-
-    for epoch in range(1, epochs + 1):
-        model.train()
-        with tqdm(train_dloader, unit="batch", leave=False, desc="Training set") as tbatch:
-            for d in tbatch:
-                # Forward
-                org_features, mask = d["features"], d["mask"]
-                org_features, mask = org_features.to(device), mask.to(device)
-                reco_features, _ = model(org_features)
-                reco_features = reco_features * mask
-
-                loss = loss_fn(org_features, reco_features)
-                train_loss += loss.item()
-
-                # Backward
-                optim.zero_grad()
-                loss.backward()
-                optim.step()
-        train_loss /= len(train_dloader)
-        lr_scheduler.step()
-
-        # Validation loop
-        model.eval()
-        with torch.no_grad():
-            with tqdm(val_dloader, unit="batch", leave=False, desc="Validation set") as vbatch:
-                for d in vbatch:
-                    # Forward
-                    org_features, mask = d["features"], d["mask"]
-                    org_features, mask = org_features.to(device), mask.to(device)
-                    reco_features, _ = model(org_features)
-                    reco_features = reco_features * mask
-
-                    loss = loss_fn(org_features, reco_features)
-                    val_loss += loss.item()
-        val_loss /= len(val_dloader)
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-
-        print(f"Epoch {epoch:<{_padding}}/{epochs}. Train Loss: {train_loss:.3f}. Val Loss: {val_loss:.3f}")
-
-        ear_stopping(val_loss, model, epoch)
-        if ear_stopping.early_stop:
-            print("Early Stopping.")
-            return best_val_loss
-        train_loss, val_loss = 0.0, 0.0
-
-    return best_val_loss
-
-
-def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
-    test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
-    train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
-    loss_fn = nn.MSELoss().to(device=device)
-    model = model.to(device)
-
-    # Check if one class SVM test is true
-    if one_class_test:
-        detector = OneClassSVM()
-        scaler = StandardScaler()
-
-    # Loop over train and determine distribution
-    train_losses, train_embeddings = [], []
-    model.eval()
-    with torch.no_grad():
-        for d in train_dloader:
-            # Inference
-            features, mask = d['features'], d['mask']
-            features, mask = features.to(device), mask.to(device)
-            reco_features, emb = model(features)
-            reco_features = reco_features * mask
-
-            if one_class_test:
-                train_embeddings.append(np.squeeze(emb.cpu().numpy()))
-
-            loss = loss_fn(features, reco_features)
-            train_losses.append(loss.item())
-    # Calculate mean & std and fit Normal distribution
-    mu, std = np.mean(train_losses), np.std(train_losses)
-
-    # Fit One class SVM
-    if one_class_test:
-        train_embeddings = np.vstack(train_embeddings)
-        scaler.fit(train_embeddings)
-        train_embeddings = scaler.transform(train_embeddings)
-        detector.fit(train_embeddings)
-
-        test_embeddings = []
-
-    val_losses, splits, days, labels = [], [], [], []
-    with torch.no_grad():
-        for d in test_dloader:
-            # Inference
-            features, mask = d['features'], d['mask']
-            features, mask = features.to(device), mask.to(device)
-            reco_features, emb = model(features)
-            reco_features = reco_features * mask
-
-            if one_class_test:
-                test_embeddings.append(np.squeeze(emb.cpu().numpy()))
-
-            loss = loss_fn(features, reco_features)
-            val_losses.append(loss.item())
-            splits.append(d['split'][0])
-            days.append(d['day_index'].item())
-            labels.append(d['label'].item())
-
-    # Exract anomaly score with MSE
-    if not one_class_test:
-        df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
-        res = df.groupby(by=["split", "day_index"]).mean()
-        res['label'] = res['label'].astype(int)
-        res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
-        res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
-
-        unique_splits = np.unique(splits).tolist()
-
-        return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
-
-    # Else with embeddings
-    else:
-        test_embeddings = scaler.transform(np.vstack(test_embeddings))
-        preds = detector.predict(test_embeddings)
-        split_day = [split + "_day" + str(day) for split, day in zip(splits, days)]
-        df_svm = pd.DataFrame({"split_day": split_day, "label": labels, "preds": preds})
-
-        anomaly_scores, labels = [], []
-        # Calculate anomaly score for each pair (split, day_index)
-
-        for s_d in np.unique(split_day):
-            df_svm_filt = df_svm[df_svm['split_day'] == s_d]
-            anomaly_scores.append(df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
-            labels.append(df_svm_filt['label'].iloc[0])
-
-        return {"anomaly_scores": np.array(anomaly_scores), "labels": np.array(labels, dtype=np.int64)}
 
 
 if __name__ == '__main__':
@@ -309,16 +154,16 @@ if __name__ == '__main__':
                 f"Track_{track_id}_P{patient_id}_" + model_str + "_" + str(datetime.today().date()) + ".pt")
 
             # Start training
-            rec_loss_train = train_loop(train_dset=train_dset,
-                                        val_dset=val_dset,
-                                        model=model,
-                                        epochs=json_config["epochs"],
-                                        batch_size=json_config["batch_size"],
-                                        patience=json_config["patience"],
-                                        learning_rate=json_config["learning_rate"],
-                                        pt_file=pt_file,
-                                        device=device,
-                                        num_workers=json_config['num_workers'])
+            rec_loss_train = autoencoder_train_loop(train_dset=train_dset,
+                                                    val_dset=val_dset,
+                                                    model=model,
+                                                    epochs=json_config["epochs"],
+                                                    batch_size=json_config["batch_size"],
+                                                    patience=json_config["patience"],
+                                                    learning_rate=json_config["learning_rate"],
+                                                    pt_file=pt_file,
+                                                    device=device,
+                                                    num_workers=json_config['num_workers'])
 
             results["Rec Loss (train)"].append(rec_loss_train)
 
