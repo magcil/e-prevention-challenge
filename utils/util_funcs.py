@@ -42,6 +42,8 @@ def get_pos_neg_samples(track_id: int,
 
             if day_index in relapse_days:
                 df = pd.read_parquet(item, engine='fastparquet')
+                df.replace(to_replace=[-np.inf, np.inf], value=np.nan, inplace=True)
+                df.dropna(inplace=True)
                 df.sort_values(by='DateTime')
                 x = df[feature_names].to_numpy()
                 x = x[~np.isinf(x).any(1)]
@@ -50,6 +52,8 @@ def get_pos_neg_samples(track_id: int,
                     groups.append(x.shape[0] * [f"P{patient_id}/val_" + num + f"/day_{day_index:02}"])
             else:
                 df = pd.read_parquet(item, engine='fastparquet')
+                df.replace(to_replace=[-np.inf, np.inf], value=np.nan, inplace=True)
+                df.dropna(inplace=True)
                 df.sort_values(by='DateTime')
                 x = df[feature_names].to_numpy()
                 x = x[~np.isinf(x).any(1)]
