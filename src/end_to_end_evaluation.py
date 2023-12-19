@@ -91,6 +91,7 @@ if __name__ == '__main__':
             "Total days (relapsed)": [],
             "Total days (non relapsed)": []
         }
+        one_class_test = False
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
         # Initialize patient's dataset and split to train/val -> Same split for each model
