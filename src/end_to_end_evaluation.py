@@ -17,6 +17,8 @@ from scipy.stats import norm
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
 from models.convolutional_autoencoder import Autoencoder, UNet
+from models.anomaly_transformer import *
+from models import anomaly_transformer as vits
 from datasets.dataset import PatientDataset
 import utils.parse as parser
 from training.loops import autoencoder_train_loop, validation_loop
@@ -34,6 +36,10 @@ def get_model(model_str: str):
         model = Autoencoder()
     elif model_str == 'UNet':
         model = UNet(in_channels=1, out_channels=1)
+    elif model_str == 'AnomalyTransformer':
+        print('vits dict:', vits.__dict__)
+        student = vits.__dict__['vit_base'](in_chans=1, img_size=[16,32])
+        model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     return model
 
 
@@ -55,6 +61,8 @@ if __name__ == '__main__':
 
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    print('json config:', json_config['one_class_test']==True)
 
     # Check for One Class Svm test
     if "one_class_test" in json_config.keys() and json_config['one_class_test'] == True:
@@ -229,7 +237,7 @@ if __name__ == '__main__':
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + str(datetime.today().date()) + ".csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + "-transformers-recons.csv")
 
             if not one_class_test:
                 patient_path = parser.get_path(track_id, patient_id)

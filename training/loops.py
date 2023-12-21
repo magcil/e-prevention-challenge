@@ -43,7 +43,9 @@ def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, pati
                 # Forward
                 org_features, mask = d["features"], d["mask"]
                 org_features, mask = org_features.to(device), mask.to(device)
+                #print('org features shape:', org_features.shape)
                 reco_features, _ = model(org_features)
+                #print('reco feats shape:', reco_features.shape)
                 reco_features = reco_features * mask
 
                 loss = loss_fn(org_features, reco_features)
@@ -105,11 +107,14 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
             reco_features, emb = model(features)
+            #print('emb shape:', emb.shape)
             reco_features = reco_features * mask
 
             if one_class_test:
-                train_embeddings.append(np.squeeze(emb.cpu().numpy()))
+                #train_embeddings.append(np.squeeze(emb.cpu().numpy()).flatten())
+                train_embeddings.append(emb.cpu().numpy().flatten())
 
+            #print('Calculating loss...')
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
     # Calculate mean & std and fit Normal distribution
@@ -134,13 +139,15 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             reco_features = reco_features * mask
 
             if one_class_test:
-                test_embeddings.append(np.squeeze(emb.cpu().numpy()))
+                #test_embeddings.append(np.squeeze(emb.cpu().numpy()).flatten())
+                test_embeddings.append(emb.cpu().numpy().flatten())
 
             loss = loss_fn(features, reco_features)
             val_losses.append(loss.item())
             splits.append(d['split'][0])
             days.append(d['day_index'].item())
             labels.append(d['label'].item())
+        print('len test embeddings:', len(test_embeddings))
 
     # Exract anomaly score with MSE
     if not one_class_test:
@@ -157,8 +164,12 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
     # Else with embeddings
     else:
         test_embeddings = scaler.transform(np.vstack(test_embeddings))
+        print('len test embeddings after scaler:', len(test_embeddings))
         preds = detector.predict(test_embeddings)
         split_day = [split + "_day" + str(day) for split, day in zip(splits, days)]
+        print('len split days:', len(split_day))
+        print('len labels:', len(labels))
+        print('len preds:', len(preds))
         df_svm = pd.DataFrame({"split_day": split_day, "label": labels, "preds": preds})
 
         anomaly_scores, labels = [], []
