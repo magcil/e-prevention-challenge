@@ -272,7 +272,7 @@ def append_step_features(f: pd.DataFrame, s: pd.DataFrame, day_index: int):
     # Calculate 5Min aggregates
     for start_interval, end_interval in zip(five_mins[:-1], five_mins[1:]):
         # Get all intervals intersecting the interval (start_interval, end_interval)
-        small_df = s_filt.loc[~((end_interval < s_filt['start_time']) | (start_interval > s_filt['end_time']))]
+        small_df = s_filt.loc[~((end_interval <= s_filt['start_time']) | (start_interval >= s_filt['end_time']))]
         if not small_df.empty:
             n_measurements = small_df.shape[0]
             steps, speeds = [], []
@@ -300,9 +300,10 @@ def append_step_features(f: pd.DataFrame, s: pd.DataFrame, day_index: int):
                 }))
     final_df = pd.concat(final_df, axis=0)
     final_df.set_index("start_time", inplace=True)
+    f.set_index("DateTime", inplace=True)
+    f = pd.concat([f, final_df], axis=1, join='inner').reindex(f.index)
 
-    return pd.concat([f, final_df], axis=0, join='inner')
-
+    return f.reset_index().rename(columns={"index": "DateTime"})
 
 FEATURE_FUNC = {
     'gyr': extract_gyr,
@@ -326,11 +327,11 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
     dtypes = df_dicts.keys()
     fil_dfs = {
         dtype: df_dicts[dtype][df_dicts[dtype]['day_index'] == day_index].copy(deep=True)
-        for dtype in dtypes if dtype not in ['sleep']
+        for dtype in dtypes if dtype not in ['sleep', 'step']
     }
     all_df = []
     for dtype, df in fil_dfs.items():
-        if dtype not in ['sleep']:
+        if dtype not in ['sleep', 'step']:
             feature_extractor = FEATURE_FUNC[dtype]
             df = feature_extractor(df)
             all_df.append(df)
@@ -339,7 +340,7 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
     all_df = pd.concat(all_df, axis=1, join='inner')
     all_df = all_df.reset_index().rename(columns={"index": "DateTime"})
 
-    # Append sleep features if all_df is non empty
+    # Append sleep/step features if all_df is non empty
     if not all_df.empty:
         # Create time encodings
         h = all_df['DateTime'].dt.hour
@@ -348,13 +349,13 @@ def extract_day_features(df_dicts: Dict[str, pd.DataFrame], day_index: int):
         all_df['sin_t'] = np.sin(time_value * (2. * np.pi / (60 * 24)))
         all_df['cos_t'] = np.cos(time_value * (2. * np.pi / (60 * 24)))
 
-        # Extract sleep features
+        # Append sleep features
         if 'sleep' in df_dicts.keys():
             FEATURE_FUNC['sleep'](all_df, df_dicts['sleep'], day_index=day_index)
-        # Drop Nan Values
+        # Append step features
         if 'step' in df_dicts.keys():
             all_df = FEATURE_FUNC['step'](all_df, df_dicts['step'], day_index=day_index)
-        
+
         return all_df
 
 
@@ -396,7 +397,7 @@ def extract_user_features(track: Optional[int] = None,
                 day_features.to_parquet(out_file, engine='fastparquet')
             elif output_format == 'csv':
                 out_file = path_to_save + f"/day_{day:02}.csv"
-                day_features.to_csv(out_file)
+                day_features.to_csv(out_file, index=False)
         else:
             continue
         p_bar.set_postfix({"Day": f"{day} | {days[-1]}"})
