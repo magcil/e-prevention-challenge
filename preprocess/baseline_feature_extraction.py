@@ -264,46 +264,58 @@ def append_step_features(f: pd.DataFrame, s: pd.DataFrame, day_index: int):
 
     date = f['DateTime'].iloc[0].date()
     s_filt = preprocess_step_features(s, day_index)
-    s_filt = s_filt.pipe(convert_to_datetime, date=date, cols=['start_time', 'end_time']).pipe(adjust_days,
-                                                                                               day_index=day_index)
 
-    five_mins = pd.date_range(date, periods=(60 * 24 // 5) + 1, freq="5Min")
-    final_df = []
-    # Calculate 5Min aggregates
-    for start_interval, end_interval in zip(five_mins[:-1], five_mins[1:]):
-        # Get all intervals intersecting the interval (start_interval, end_interval)
-        small_df = s_filt.loc[~((end_interval <= s_filt['start_time']) | (start_interval >= s_filt['end_time']))]
-        if not small_df.empty:
-            n_measurements = small_df.shape[0]
-            steps, speeds = [], []
+    if not s_filt.empty:
+        s_filt = s_filt.pipe(convert_to_datetime, date=date, cols=['start_time', 'end_time']).pipe(adjust_days,
+                                                                                                   day_index=day_index)
 
-            for row in small_df.itertuples():
-                total_length = (row.end_time - row.start_time).seconds
-                interval_length = (min(row.end_time, end_interval) - max(row.start_time, start_interval)).seconds
-                steps.append((interval_length / total_length) * row.totalSteps)
-                speeds.append(row.average_speed)
+        five_mins = pd.date_range(date, periods=(60 * 24 // 5) + 1, freq="5Min")
+        final_df = []
+        # Calculate 5Min aggregates
+        for start_interval, end_interval in zip(five_mins[:-1], five_mins[1:]):
+            # Get all intervals intersecting the interval (start_interval, end_interval)
+            small_df = s_filt.loc[~((end_interval <= s_filt['start_time']) | (start_interval >= s_filt['end_time']))]
+            if not small_df.empty:
+                n_measurements = small_df.shape[0]
+                steps, speeds = [], []
 
-            final_df.append(
-                pd.DataFrame({
-                    "n_measurements": [n_measurements],
-                    "steps": [np.sum(steps)],
-                    "average_speed": [np.nanmean(speeds)],
-                    "start_time": [start_interval]
-                }))
-        else:
-            final_df.append(
-                pd.DataFrame({
-                    "n_measurements": [0],
-                    "steps": [0],
-                    "average_speed": [0],
-                    "start_time": [start_interval]
-                }))
-    final_df = pd.concat(final_df, axis=0)
+                for row in small_df.itertuples():
+                    total_length = (row.end_time - row.start_time).seconds
+                    interval_length = (min(row.end_time, end_interval) - max(row.start_time, start_interval)).seconds
+                    steps.append((interval_length / total_length) * row.totalSteps)
+                    speeds.append(row.average_speed)
+
+                final_df.append(
+                    pd.DataFrame({
+                        "n_measurements": [n_measurements],
+                        "steps": [np.sum(steps)],
+                        "average_speed": [np.nanmean(speeds)],
+                        "start_time": [start_interval]
+                    }))
+            else:
+                final_df.append(
+                    pd.DataFrame({
+                        "n_measurements": [0],
+                        "steps": [0],
+                        "average_speed": [0],
+                        "start_time": [start_interval]
+                    }))
+        final_df = pd.concat(final_df, axis=0)
+    else:
+        index = pd.date_range(date, periods=(60 * 24 // 5), freq="5Min")
+        final_df = pd.DataFrame({
+            "n_measurements": len(index) * [np.nan],
+            "steps": len(index) * [np.nan],
+            "average_speed": len(index) * [np.nan],
+            "start_time": index
+        })
+
     final_df.set_index("start_time", inplace=True)
     f.set_index("DateTime", inplace=True)
     f = pd.concat([f, final_df], axis=1, join='inner').reindex(f.index)
 
     return f.reset_index().rename(columns={"index": "DateTime"})
+
 
 FEATURE_FUNC = {
     'gyr': extract_gyr,
@@ -391,14 +403,17 @@ def extract_user_features(track: Optional[int] = None,
 
     for day in p_bar:
         day_features = extract_day_features(full_dfs, day_index=day)
-        if not day_features.empty:
-            if output_format == 'parquet':
-                out_file = path_to_save + f"/day_{day:02}.parquet"
-                day_features.to_parquet(out_file, engine='fastparquet')
-            elif output_format == 'csv':
-                out_file = path_to_save + f"/day_{day:02}.csv"
-                day_features.to_csv(out_file, index=False)
-        else:
+        try:
+            if not day_features.empty:
+                if output_format == 'parquet':
+                    out_file = path_to_save + f"/day_{day:02}.parquet"
+                    day_features.to_parquet(out_file, engine='fastparquet')
+                elif output_format == 'csv':
+                    out_file = path_to_save + f"/day_{day:02}.csv"
+                    day_features.to_csv(out_file, index=False)
+            else:
+                continue
+        except Exception as e:
             continue
         p_bar.set_postfix({"Day": f"{day} | {days[-1]}"})
 
