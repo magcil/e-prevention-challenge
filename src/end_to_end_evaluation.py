@@ -65,7 +65,7 @@ if __name__ == '__main__':
     print('json config:', json_config['one_class_test']==True)
 
     # Check for One Class Svm test
-    if "one_class_test" in json_config.keys() and json_config['one_class_test'] == True:
+    """if "one_class_test" in json_config.keys() and json_config['one_class_test'] == True:
         results = {
             "Patient_id": [],
             "Model": [],
@@ -100,8 +100,29 @@ if __name__ == '__main__':
             "Total days (non relapsed)": []
         }
         one_class_test = False
+    """
+    results = {
+            "Patient_id": [],
+            "Model": [],
+            "Inference Method": [],
+            "Rec Loss (train)": [],
+            "Rec Loss (relapsed)": [],
+            "Rec Loss (non relapsed)": [],
+            "Distribution Loss (mean)": [],
+            "Distribution Loss (std)": [],
+            "ROC AUC": [],
+            "PR AUC": [],
+            "Mean anomaly score (relapsed)": [],
+            "Mean anomaly score (non relapsed)": [],
+            "ROC AUC (random)": [],
+            "PR AUC (random)": [],
+            "Total days on train": [],
+            "Total days (relapsed)": [],
+            "Total days (non relapsed)": []
+        }
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
+        
         # Initialize patient's dataset and split to train/val -> Same split for each model
         X = parser.get_features(track_id=track_id,
                                 patient_id=patient_id,
@@ -198,9 +219,14 @@ if __name__ == '__main__':
             test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
             # Get results and write outputs
-            val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
+            if ((patient_id==1) or (patient_id==8)):
+                one_class_test = 0
+                val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
+            else:
+                one_class_test = 1
+                val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
 
-            if not one_class_test:
+            """if not one_class_test:
                 results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
                 results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
 
@@ -209,6 +235,22 @@ if __name__ == '__main__':
                 anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
                 anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
             else:
+                anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
+                anomaly_scores_random = np.random.random(size=len(anomaly_scores))"""
+
+            if ((patient_id == 1) or (patient_id == 8)):
+                results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
+                results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
+                results["Inference Method"].append("MSE Loss")
+
+                val_losses = val_results['scores']['val_loss'].to_numpy()
+                labels = val_results['scores']['label'].to_numpy()
+                anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
+                anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
+            else:
+                results["Inference Method"].append("OC-SVM")
+                results["Distribution Loss (mean)"].append(" ")
+                results["Distribution Loss (std)"].append(" ")
                 anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
                 anomaly_scores_random = np.random.random(size=len(anomaly_scores))
 
@@ -234,10 +276,15 @@ if __name__ == '__main__':
                 results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
                 results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
                 results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))
+            else:
+                results['Mean anomaly score (non relapsed)'].append(" ")
+                results['Mean anomaly score (relapsed)'].append(" ")
+                results['Rec Loss (non relapsed)'].append(" ")
+                results['Rec Loss (relapsed)'].append(" ")                
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + str(datetime.today().date()) + "-transformers-recons.csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_fewer.csv")
 
             if not one_class_test:
                 patient_path = parser.get_path(track_id, patient_id)
