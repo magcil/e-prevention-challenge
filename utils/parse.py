@@ -75,7 +75,7 @@ def parse_mode_data(track: int, patient: int, mode: str, num: int) -> Dict[str, 
     return d
 
 
-def get_relapses(track: int, patient: int, num: int) -> pd.DataFrame:
+def get_relapses(track: int, patient: int, num: int, mode: str = "val") -> pd.DataFrame:
     """Return the relapse data of patient's (only val)
     
     Args:
@@ -86,7 +86,7 @@ def get_relapses(track: int, patient: int, num: int) -> pd.DataFrame:
     Returns:
         pd.Dataframe
     """
-    file_path = os.path.join(get_path(track, patient, "val", num), "relapses.csv")
+    file_path = os.path.join(get_path(track, patient, mode, num), "relapses.csv")
 
     return pd.read_csv(file_path)
 
@@ -108,21 +108,28 @@ def iter_on_patient_data(track: int, patient: int, mode: str, dtype: str):
         yield pd.read_parquet(get_path(track, patient, m, num, dtype))
 
 
-def get_unique_days(track: int, patient: int, mode: str, num: int):
+def get_unique_days(track: int, patient: int, mode: str, num: int, days_flag: str = "intersection"):
     df_1 = parse_data(track, patient, mode, num, "hrm")
     df_2 = parse_data(track, patient, mode, num, "gyr")
     df_3 = parse_data(track, patient, mode, num, "linacc")
 
-    return np.intersect1d(ar1=df_3['day_index'].unique(),
-                          ar2=np.intersect1d(ar1=df_1['day_index'].unique(),
-                                             ar2=df_2['day_index'].unique(),
-                                             assume_unique=True),
-                          assume_unique=True)
+    days = np.intersect1d(ar1=df_3['day_index'].unique(),
+                          ar2=np.intersect1d(
+                              ar1=df_1['day_index'].unique(), ar2=df_2['day_index'].unique(), assume_unique=True),
+                          assume_unique=True) if days_flag == "intersection" else np.union1d(
+                              ar1=df_3['day_index'].unique(),
+                              ar2=np.union1d(ar1=df_1['day_index'].unique(), ar2=df_2['day_index'].unique()))
+
+    return days
 
 
 def parse_dtypes(track: int, patient: int, mode: str, num: int, dtypes: List[str]) -> Dict[str, pd.DataFrame]:
 
     return {dtype: parse_data(track, patient, mode, num, dtype) for dtype in dtypes}
+
+def get_patient_dirs(track: int, patient: int) -> List[str]:
+    patient_path = get_path(track, patient)
+    return [os.path.join(patient_path, dir) for dir in next(os.walk(patient_path))[1]]
 
 
 def get_features(track_id: int, patient_id: int, mode: str, num: Optional[int] = None, extension=".parquet"):
