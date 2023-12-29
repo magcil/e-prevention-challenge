@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import numpy as np
+from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
 from utils import parse
 
@@ -82,6 +83,15 @@ def fill_predictions(track_id, patient_id, anomaly_scores, split, days):
 
     # Merge
     final_df = df_relapses.merge(df_scores, how="outer", on="day_index")
+    final_df['anomaly_scores'] = final_df['anomaly_scores'].interpolate()
 
     # Interpolate to fill na values
-    return final_df.interpolate()
+    return final_df.ffill().bfill()
+
+def calculate_roc_pr_auc(anomaly_scores, labels):
+    # Compute metrics
+    precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
+
+    fpr, tpr, _ = roc_curve(labels, anomaly_scores)
+
+    return {"ROC AUC": auc(fpr, tpr), "PR AUC": auc(recall, precision)}

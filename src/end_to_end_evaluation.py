@@ -13,7 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from datetime import datetime
-from scipy.stats import norm
+from scipy.signal import medfilt
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
 from models.convolutional_autoencoder import Autoencoder, UNet
@@ -22,7 +22,7 @@ from models import anomaly_transformer as vits
 from datasets.dataset import PatientDataset
 import utils.parse as parser
 from training.loops import autoencoder_train_loop, validation_loop
-from utils.util_funcs import fill_predictions
+from utils.util_funcs import fill_predictions, calculate_roc_pr_auc
 
 
 def parse_args():
@@ -78,6 +78,13 @@ if __name__ == '__main__':
         "Total days (relapsed)": [],
         "Total days (non relapsed)": []
     }
+
+    if "postprocessing_filters" in json_config.keys():
+        for filter_size in json_config['postprocessing_filters']:
+            results[f"median filter ROC AUC ({filter_size})"] = []
+            results[f"median filter PR AUC ({filter_size})"] = []
+            results[f"mean filter ROC AUC ({filter_size})"] = []
+            results[f"mean filter PR AUC ({filter_size})"] = []
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
 
@@ -184,7 +191,6 @@ if __name__ == '__main__':
                 one_class_test = 1
                 val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
 
-
             if ((patient_id == 1) or (patient_id == 8)):
                 results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
                 results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
@@ -244,22 +250,34 @@ if __name__ == '__main__':
             anomaly_scores, labels = np.concatenate(anomaly_scores), np.concatenate(labels)
             anomaly_scores_random = np.random.random(size=len(anomaly_scores))
 
-            # Compute metrics
-            precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
+            scores = calculate_roc_pr_auc(anomaly_scores, labels)
 
-            fpr, tpr, _ = roc_curve(labels, anomaly_scores)
-
-            results["ROC AUC"].append(auc(fpr, tpr))
-            results['PR AUC'].append(auc(recall, precision))
+            results["ROC AUC"].append(scores["ROC AUC"])
+            results['PR AUC'].append(scores["PR AUC"])
 
             # Compute metrics for random guess
-            precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
-            fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
-            results["ROC AUC (random)"].append(auc(fpr, tpr))
-            results['PR AUC (random)'].append(auc(recall, precision))
+            scores = calculate_roc_pr_auc(anomaly_scores_random, labels)
+            results["ROC AUC (random)"].append(scores["ROC AUC"])
+            results['PR AUC (random)'].append(scores["PR AUC"])
 
             results['Total days (non relapsed)'].append(len(labels[labels == 0]))
             results['Total days (relapsed)'].append(len(labels[labels == 1]))
+
+            # Use Median/Mean smoothing
+            if "postprocessing_filters" in json_config.keys():
+                for filter_size in json_config["postprocessing_filters"]:
+                    # Use median filtering
+                    median_anomaly_scores = medfilt(anomaly_scores, filter_size)
+                    # Get scores and append
+                    scores = calculate_roc_pr_auc(median_anomaly_scores, labels)
+                    results[f"median filter ROC AUC ({filter_size})"].append(scores["ROC AUC"])
+                    results[f"median filter PR AUC ({filter_size})"].append(scores["PR AUC"])
+
+                    # Use mean filtering
+                    mean_anomaly_scores = np.convolve(anomaly_scores, np.ones(filter_size) / filter_size, "same")
+                    scores = calculate_roc_pr_auc(mean_anomaly_scores, labels)
+                    results[f"mean filter ROC AUC ({filter_size})"].append(scores["ROC AUC"])
+                    results[f"mean filter PR AUC ({filter_size})"].append(scores["PR AUC"])
 
             # Write csvs
             final_df = pd.DataFrame(results)
