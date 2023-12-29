@@ -45,9 +45,7 @@ def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, pati
                 # Forward
                 org_features, mask = d["features"], d["mask"]
                 org_features, mask = org_features.to(device), mask.to(device)
-                #print('org features shape:', org_features.shape)
                 reco_features, _ = model(org_features)
-                #print('reco feats shape:', reco_features.shape)
                 reco_features = reco_features * mask
 
                 loss = loss_fn(org_features, reco_features)
@@ -98,8 +96,6 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
     # Check if one class SVM test is true
     if one_class_test:
         detector = OneClassSVM()
-        #detector = EllipticEnvelope()
-        #detector = LocalOutlierFactor(novelty=True)
         scaler = StandardScaler()
 
     # Loop over train and determine distribution
@@ -111,14 +107,11 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
             reco_features, emb = model(features)
-            #print('emb shape:', emb.shape)
             reco_features = reco_features * mask
 
             if one_class_test:
-                #train_embeddings.append(np.squeeze(emb.cpu().numpy()).flatten())
                 train_embeddings.append(emb.cpu().numpy().flatten())
 
-            #print('Calculating loss...')
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
     # Calculate mean & std and fit Normal distribution
@@ -143,7 +136,6 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             reco_features = reco_features * mask
 
             if one_class_test:
-                #test_embeddings.append(np.squeeze(emb.cpu().numpy()).flatten())
                 test_embeddings.append(emb.cpu().numpy().flatten())
 
             loss = loss_fn(features, reco_features)
@@ -167,43 +159,45 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
     # Else with embeddings
     else:
         test_embeddings = scaler.transform(np.vstack(test_embeddings))
-        print('len test embeddings after scaler:', len(test_embeddings))
+
         preds = detector.predict(test_embeddings)
         dist_from_hyperplane = np.abs(detector.decision_function(test_embeddings))
-        split_day = [split + "_day" + str(day) for split, day in zip(splits, days)]
-        print('len split days:', len(split_day))
-        print('len labels:', len(labels))
-        print('len preds:', len(preds))
-        df_svm = pd.DataFrame({"split_day": split_day, "label": labels, "preds": preds, "dist_from_hp": dist_from_hyperplane})
+        split_day = [split + "_day_" + str(day) for split, day in zip(splits, days)]
 
-        anomaly_scores, labels = [], []
+        df_svm = pd.DataFrame({
+            "split_day": split_day,
+            "label": labels,
+            "preds": preds,
+            "dist_from_hp": dist_from_hyperplane
+        })
+
+        anomaly_scores, labels, split_days = [], [], []
         # Calculate anomaly score for each pair (split, day_index)
 
         for s_d in np.unique(split_day):
             df_svm_filt = df_svm[df_svm['split_day'] == s_d]
             dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
-            
-            print('dist from hp:', dist_from_hp)
+
             if len(dist_from_hp) > 1:
                 min_, max_ = dist_from_hp.min(), dist_from_hp.max()
                 if max_ == min_:
                     median = 1
                 else:
                     median = ((dist_from_hp.median() - min_) / (max_ - min_)) + 1
-                #median = dist_from_hp.median()
             else:
                 median = 1
-            #anomaly_scores.append( (np.tanh((median * df_svm_filt[df_svm_filt['preds'] == -1].shape[0]) / df_svm_filt.shape[0]) / 2) + 0.5)
-            #anomaly_scores.append( (np.tanh((median * df_svm_filt[df_svm_filt['preds'] == -1].shape[0]) / df_svm_filt.shape[0])))
             score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
             if score > 1:
                 score = 1
             anomaly_scores.append(score)
-            #anomaly_scores.append(df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
             labels.append(df_svm_filt['label'].iloc[0])
+            split_days.append(s_d)
 
-        print('anomaly scores:', anomaly_scores)
-        return {"anomaly_scores": np.array(anomaly_scores), "labels": np.array(labels, dtype=np.int64)}
+        return {
+            "anomaly_scores": np.array(anomaly_scores),
+            "labels": np.array(labels, dtype=np.int64),
+            "split_days": split_days
+        }
 
 
 def classification_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
