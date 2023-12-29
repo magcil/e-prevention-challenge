@@ -42,6 +42,8 @@ def get_pos_neg_samples(track_id: int,
 
             if day_index in relapse_days:
                 df = pd.read_parquet(item, engine='fastparquet')
+                df.replace(to_replace=[-np.inf, np.inf], value=np.nan, inplace=True)
+                df.dropna(inplace=True)
                 df.sort_values(by='DateTime')
                 x = df[feature_names].to_numpy()
                 x = x[~np.isinf(x).any(1)]
@@ -50,6 +52,8 @@ def get_pos_neg_samples(track_id: int,
                     groups.append(x.shape[0] * [f"P{patient_id}/val_" + num + f"/day_{day_index:02}"])
             else:
                 df = pd.read_parquet(item, engine='fastparquet')
+                df.replace(to_replace=[-np.inf, np.inf], value=np.nan, inplace=True)
+                df.dropna(inplace=True)
                 df.sort_values(by='DateTime')
                 x = df[feature_names].to_numpy()
                 x = x[~np.isinf(x).any(1)]
@@ -65,3 +69,19 @@ def get_pos_neg_samples(track_id: int,
         }
     else:
         return {"relapses": np.concatenate(all_pos, axis=0), "non_relapses": np.concatenate(all_neg, axis=0)}
+
+
+def fill_predictions(track_id, patient_id, anomaly_scores, split, days):
+    mode, num = split.split("_")[0], int(split.split("_")[1])
+    df_relapses = parse.get_relapses(track=track_id, patient=patient_id, num=num, mode=mode)
+    # Drop last row from relapses
+    df_relapses = df_relapses.iloc[:-1]
+
+    df_scores = pd.DataFrame({"anomaly_scores": anomaly_scores, "day_index": days})
+    df_scores.sort_values(by="day_index", inplace=True)
+
+    # Merge
+    final_df = df_relapses.merge(df_scores, how="outer", on="day_index")
+
+    # Interpolate to fill na values
+    return final_df.interpolate()

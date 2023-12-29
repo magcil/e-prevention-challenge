@@ -5,5 +5,6 @@ FEATURE_NAMES = {
     ],
     "gyr": ['gyr_mean', 'gyr_std', 'gyr_delta_mean', 'gyr_delta_std'],
     "linacc": ['acc_mean', 'acc_std', 'acc_delta_mean', 'acc_delta_std'],
-    "sleep": ['interval_sleep', 'aggr_sleep', 'n_sleep']
+    "sleep": ['interval_sleep', 'aggr_sleep', 'n_sleep'],
+    "time": ["cos_t", "sin_t"]
 }
