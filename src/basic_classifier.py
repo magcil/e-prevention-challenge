@@ -131,19 +131,26 @@ def test(model, track_id, patient_id, window_size, upsample_size, feature_mappin
     test_dset._upsample_data(upsample_size=upsample_size)
     X_test, df_test = raw_features(test_dset)
 
-    df_test["y_test_pred"] = loaded_model.decision_function(X_test)
+    decisions = loaded_model.decision_function(X_test)
+    decisions = list(map(lambda x: -x, decisions))
+    df_test["y_test_pred"] = decisions
+
     preds_per_day = df_test.groupby(by=["split", "day_index"]).mean()
 
     preds_per_day['label'] = preds_per_day['label'].astype(int)
-    preds_per_day['y_pred_mean_decisions'] = preds_per_day['y_test_pred'].map(lambda x: 1 / (1 + np.exp(-x)))
-
-    df_test["y_test_pred"] = 1 / (1 + np.exp(-df_test["y_test_pred"].to_numpy()))
+    min_of_mean = preds_per_day['y_test_pred'].min()
+    max_of_mean = preds_per_day['y_test_pred'].max()
+    preds_per_day['y_pred_mean_decisions'] = preds_per_day['y_test_pred'].map(lambda x: (x - min_of_mean) / (max_of_mean - min_of_mean))
+    decisions = [(x - min(decisions)) / (max(decisions) - min(decisions)) for x in decisions]
+    df_test["y_test_pred"] = decisions
     preds_per_day['y_pred_mean_proba'] = df_test.groupby(by=["split", "day_index"]).mean()["y_test_pred"]
 
 
     results = {}
     y_pred_mean_decisions = list(preds_per_day["y_pred_mean_decisions"])
+
     y_pred_mean_proba = list(preds_per_day['y_pred_mean_proba'])
+
     y_true = list(preds_per_day["label"])
 
     #ps_random = np.random.uniform(0, 1, len(y_pred_mean_decisions))
