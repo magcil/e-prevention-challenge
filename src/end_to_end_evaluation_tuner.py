@@ -170,15 +170,17 @@ def validation_loop(train_dset, test_dset, model, device):
 
 
 def objective(trial, track_id, patient_id, json_config, feature_mapping):
-    window_size = trial.suggest_categorical('window_size', [48, 128, 160])
-    upsampling_size = trial.suggest_categorical('upsampling_size', [50, 100, 200, 500])
+    #window_size = trial.suggest_categorical('window_size', [48, 128, 160])
+    #upsampling_size = trial.suggest_categorical('upsampling_size', [50, 100, 200, 500])
+    window_size = 32
+    upsampling_size = 120
     #latent_dim = trial.suggest_categorical('latent_dim', [32, 64, 128, 256])
     num_layers = trial.suggest_int('num_layers', 3, 6)
     # Ensure that num_units correspond to the specified num_layers
     num_channels = [1] + [2 ** (i + 2) for i in range(num_layers)]
     learning_rate = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
-    scheduler_name = trial.suggest_categorical('scheduler', [None, 'StepLR', 'CosineAnnealingLR', 'ReduceLROnPlateau'])
-
+    #scheduler_name = trial.suggest_categorical('scheduler', [None, 'StepLR', 'CosineAnnealingLR', 'ReduceLROnPlateau'])
+    scheduler_name = 'CosineAnnealingLR'
     # Initialize patient's dataset and split to train/val -> Same split for each model
     X = parser.get_features(track_id=track_id, patient_id=patient_id, mode="train")
 
@@ -305,7 +307,7 @@ if __name__ == '__main__':
                                                 json_config=json_config, feature_mapping=feature_mapping)
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective_with_args, n_trials=50)
+        study.optimize(objective_with_args, n_trials=5)
 
         best_params = study.best_params
         print("Best Hyperparameters:", best_params)
