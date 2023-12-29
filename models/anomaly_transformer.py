@@ -319,7 +319,6 @@ class FullPipline(nn.Module):
 
     def forward(self, x, recons=True):
         _out = self.backbone(x)
-        #print('encoder output:', _out[0].shape)
         
         if recons==True:
             return self.head_recons(_out[0][:, :]), _out[0]

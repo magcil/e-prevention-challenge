@@ -219,7 +219,7 @@ if __name__ == '__main__':
             test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
             # Get results and write outputs
-            if ((patient_id==1) or (patient_id==8)):
+            if ((patient_id==0) or (patient_id==10)):
                 one_class_test = 0
                 val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
             else:
@@ -238,7 +238,7 @@ if __name__ == '__main__':
                 anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
                 anomaly_scores_random = np.random.random(size=len(anomaly_scores))"""
 
-            if ((patient_id == 1) or (patient_id == 8)):
+            if ((patient_id == 0) or (patient_id == 0)):
                 results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
                 results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
                 results["Inference Method"].append("MSE Loss")
@@ -284,7 +284,7 @@ if __name__ == '__main__':
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_fewer.csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4a.csv")
 
             if not one_class_test:
                 patient_path = parser.get_path(track_id, patient_id)

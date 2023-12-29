@@ -88,6 +88,10 @@ def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, pati
 
     return best_val_loss
 
+def sigmoid(x):
+    z = 1/(1 + np.exp(-x))
+    return z
+
 
 def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
     test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
@@ -169,33 +173,25 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
         test_embeddings = scaler.transform(np.vstack(test_embeddings))
         print('len test embeddings after scaler:', len(test_embeddings))
         preds = detector.predict(test_embeddings)
-        dist_from_hyperplane = np.abs(detector.decision_function(test_embeddings))
+        dist_from_hyperplane = -1 * (detector.decision_function(test_embeddings))
         split_day = [split + "_day" + str(day) for split, day in zip(splits, days)]
         print('len split days:', len(split_day))
         print('len labels:', len(labels))
         print('len preds:', len(preds))
         df_svm = pd.DataFrame({"split_day": split_day, "label": labels, "preds": preds, "dist_from_hp": dist_from_hyperplane})
 
+        std = np.std(df_svm["dist_from_hp"])
+
         anomaly_scores, labels = [], []
         # Calculate anomaly score for each pair (split, day_index)
 
         for s_d in np.unique(split_day):
             df_svm_filt = df_svm[df_svm['split_day'] == s_d]
-            dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
+            #dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
+            df_svm_filt["dist_from_hp"] = df_svm_filt["dist_from_hp"].apply(lambda x: sigmoid(x / std))
             
-            print('dist from hp:', dist_from_hp)
-            if len(dist_from_hp) > 1:
-                min_, max_ = dist_from_hp.min(), dist_from_hp.max()
-                if max_ == min_:
-                    median = 1
-                else:
-                    median = ((dist_from_hp.median() - min_) / (max_ - min_)) + 1
-                #median = dist_from_hp.median()
-            else:
-                median = 1
-            #anomaly_scores.append( (np.tanh((median * df_svm_filt[df_svm_filt['preds'] == -1].shape[0]) / df_svm_filt.shape[0]) / 2) + 0.5)
-            #anomaly_scores.append( (np.tanh((median * df_svm_filt[df_svm_filt['preds'] == -1].shape[0]) / df_svm_filt.shape[0])))
-            score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
+            #score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
+            score = np.mean(df_svm_filt["dist_from_hp"])
             if score > 1:
                 score = 1
             anomaly_scores.append(score)

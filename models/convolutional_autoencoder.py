@@ -9,13 +9,9 @@ class Autoencoder(nn.Module):
 
     def __init__(self):
         super(Autoencoder, self).__init__()
-        self.conv1 = nn.Sequential(nn.Conv2d(1, 4, kernel_size=(3, 3), stride=1, padding=1), nn.BatchNorm2d(4),
+        self.conv1 = nn.Sequential(nn.Conv2d(1, 8, kernel_size=(3, 3), stride=1, padding=1), nn.BatchNorm2d(4),
                                    nn.ReLU())
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
-
-        self.conv10 = nn.Sequential(nn.Conv2d(4, 8, kernel_size=(3, 3), stride=1, padding=1), nn.BatchNorm2d(8),
-                                   nn.ReLU())
-        self.pool10 = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
 
 
         self.conv2 = nn.Sequential(nn.Conv2d(8, 16, kernel_size=(3, 3), stride=1, padding=1), nn.BatchNorm2d(16),
@@ -32,22 +28,17 @@ class Autoencoder(nn.Module):
         self.unconv2 = nn.Sequential(nn.ConvTranspose2d(16, 8, kernel_size=(3, 3), stride=1, padding=1),
                                      nn.BatchNorm2d(8), nn.ReLU())
 
-        self.unpool20 = nn.MaxUnpool2d(kernel_size=2, stride=2)
-        self.unconv20 = nn.Sequential(nn.ConvTranspose2d(8, 4, kernel_size=(3, 3), stride=1, padding=1),
-                                     nn.BatchNorm2d(4), nn.ReLU())
 
 
         self.unpool3 = nn.MaxUnpool2d(kernel_size=2, stride=2)
 
-        self.unconv3 = nn.ConvTranspose2d(4, 1, kernel_size=(3, 3), stride=1, padding=1)
+        self.unconv3 = nn.ConvTranspose2d(8, 1, kernel_size=(3, 3), stride=1, padding=1)
 
     def forward(self, x, flag=False, save_path=''):
         indices = []
         x = self.conv1(x)
         x, index = self.pool1(x)
         indices.append(index)
-        x = self.conv10(x)
-        x, index = self.pool10(x)
         indices.append(index)
         x = self.conv2(x)
         x, index = self.pool2(x)
@@ -63,12 +54,10 @@ class Autoencoder(nn.Module):
             with open(save_path + '.npy', 'wb') as f:
                 np.save(f, x.cpu().detach().numpy())
 
-        x = self.unpool1(x, indices[3])
+        x = self.unpool1(x, indices[2])
         x = self.unconv1(x)
-        x = self.unpool2(x, indices[2])
+        x = self.unpool2(x, indices[1])
         x = self.unconv2(x)
-        x = self.unpool20(x, indices[1])
-        x = self.unconv20(x)
         x = self.unpool3(x, indices[0])
         x = self.unconv3(x)
 
