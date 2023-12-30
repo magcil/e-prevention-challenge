@@ -88,6 +88,7 @@ def fill_predictions(track_id, patient_id, anomaly_scores, split, days):
     # Interpolate to fill na values
     return final_df.ffill().bfill()
 
+
 def calculate_roc_pr_auc(anomaly_scores, labels):
     # Compute metrics
     precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
@@ -95,3 +96,14 @@ def calculate_roc_pr_auc(anomaly_scores, labels):
     fpr, tpr, _ = roc_curve(labels, anomaly_scores)
 
     return {"ROC AUC": auc(fpr, tpr), "PR AUC": auc(recall, precision)}
+
+
+def svm_score(preds, dist_from_hp):
+    if len(dist_from_hp) > 1:
+        min_, max_ = dist_from_hp.min(), dist_from_hp.max()
+        median = 1 if max_ == min_ else ((dist_from_hp.median() - min_) / (max_ - min_)) + 1
+    else:
+        median = 1
+    score = median * (preds[preds == -1].shape[0] / len(preds))
+
+    return min(score, 1)

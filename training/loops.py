@@ -12,14 +12,13 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from sklearn.svm import OneClassSVM
-from sklearn.covariance import EllipticEnvelope
-from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import norm
 from sklearn.metrics import accuracy_score, f1_score
 import torch.nn.functional as TF
 
 from callbacks.callbacks import EarlyStopping
+from utils.util_funcs import svm_score
 
 
 def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
@@ -146,15 +145,19 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
 
     # Exract anomaly score with MSE
     if not one_class_test:
-        df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
+        df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "labels": labels})
         res = df.groupby(by=["split", "day_index"]).mean()
-        res['label'] = res['label'].astype(int)
+        res['labels'] = res['labels'].astype(int)
         res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
-        res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
 
-        unique_splits = np.unique(splits).tolist()
+        res.reset_index(names=["split", "day_index"], inplace=True)
+        res['split_days'] = [split + "_day_" + str(day) for split, day in zip(res['split'], res['day_index'])]
 
-        return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
+        return {
+            "anomaly_scores": res["anomaly_scores"].to_numpy(),
+            "labels": res['labels'].to_numpy(),
+            "split_days": res['split_days'].to_list()
+        }
 
     # Else with embeddings
     else:
@@ -178,17 +181,8 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             df_svm_filt = df_svm[df_svm['split_day'] == s_d]
             dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
 
-            if len(dist_from_hp) > 1:
-                min_, max_ = dist_from_hp.min(), dist_from_hp.max()
-                if max_ == min_:
-                    median = 1
-                else:
-                    median = ((dist_from_hp.median() - min_) / (max_ - min_)) + 1
-            else:
-                median = 1
-            score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
-            if score > 1:
-                score = 1
+            score = svm_score(df_svm_filt['preds'], dist_from_hp)
+
             anomaly_scores.append(score)
             labels.append(df_svm_filt['label'].iloc[0])
             split_days.append(s_d)

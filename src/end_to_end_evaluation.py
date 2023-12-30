@@ -14,7 +14,6 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from datetime import datetime
 from scipy.signal import medfilt
-from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
 from models.convolutional_autoencoder import Autoencoder, UNet
 from models.anomaly_transformer import *
@@ -66,10 +65,7 @@ if __name__ == '__main__':
     results = {
         "Patient_id": [],
         "Model": [],
-        "Inference Method": [],
-        "Rec Loss (train)": [],
-        "Distribution Loss (mean)": [],
-        "Distribution Loss (std)": [],
+        "one_class_test": [],
         "ROC AUC": [],
         "PR AUC": [],
         "ROC AUC (random)": [],
@@ -136,12 +132,7 @@ if __name__ == '__main__':
 
         # Train and validate for each model
         for model_str in tqdm(models, desc="Validating model", leave=False):
-            model = get_model(model_str=model_str)
-
-            # Check for model transfer learning / works when only one model is given
-            if "transfer_learning" in json_config.keys():
-                model.load_state_dict(torch.load(json_config["transfer_learning"]))
-                print("Transfer learning from all data.")
+            model = get_model(model_str=json_config["patients_config"][f"P{patient_id}"]["model"])
 
             # Get patient's path to store pt files
             pt_file = os.path.join(
@@ -159,8 +150,6 @@ if __name__ == '__main__':
                                                     pt_file=pt_file,
                                                     device=device,
                                                     num_workers=json_config['num_workers'])
-
-            results["Rec Loss (train)"].append(rec_loss_train)
 
             # Load best model and validate
             model.load_state_dict(torch.load(pt_file, map_location=device))
@@ -183,72 +172,47 @@ if __name__ == '__main__':
             train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
             test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
-            # Get results and write outputs
-            if ((patient_id == 1) or (patient_id == 8)):
-                one_class_test = 0
-                val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
-            else:
-                one_class_test = 1
-                val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
+            val_results = validation_loop(
+                train_dset=train_dset,
+                test_dset=test_dset,
+                model=model,
+                one_class_test=json_config['patients_config'][f"P{patient_id}"]['one_class_test'],
+                device=device)
 
-            if ((patient_id == 1) or (patient_id == 8)):
-                results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
-                results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
-                results["Inference Method"].append("MSE Loss")
+            results['one_class_test'].append(json_config['patients_config'][f"P{patient_id}"]['one_class_test'])
 
-                val_losses = val_results['scores']['val_loss'].to_numpy()
-                anomaly_scores, labels = [], []
+            anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
 
-                # Write csvs with predictions
-                patient_path = parser.get_path(track_id, patient_id)
-                for split in val_results['split']:
-                    filt_df = val_results['scores'].loc[split].reset_index(names="day_index")
-                    filt_df = fill_predictions(track_id=track_id,
-                                               patient_id=patient_id,
-                                               anomaly_scores=filt_df['anomaly_scores'],
-                                               split=split,
-                                               days=filt_df["day_index"])
-                    filt_df.to_csv(
-                        os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
+            # Write csvs with predictions
+            patient_path = parser.get_path(track_id, patient_id)
+            df = pd.DataFrame({
+                "anomaly_scores": anomaly_scores,
+                "label": labels,
+                "split_day": val_results["split_days"]
+            })
+            df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_day']]
+            df['day_index'] = [int(x.split("_")[3]) for x in df["split_day"]]
 
-                    anomaly_scores.append(filt_df['anomaly_scores'])
-                    labels.append(filt_df['relapse'])
-            else:
-                results["Inference Method"].append("OC-SVM")
-                results["Distribution Loss (mean)"].append(" ")
-                results["Distribution Loss (std)"].append(" ")
-                anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
+            anomaly_scores, labels = [], []
 
-                # Write csvs with predictions
-                patient_path = parser.get_path(track_id, patient_id)
-                df = pd.DataFrame({
-                    "anomaly_scores": anomaly_scores,
-                    "label": labels,
-                    "split_day": val_results["split_days"]
-                })
-                df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_day']]
-                df['day_index'] = [int(x.split("_")[3]) for x in df["split_day"]]
+            for sp in df['split'].unique():
+                mode, num = sp.split("_")[0], int(sp.split("_")[1])
+                filt_df = df[df['split'] == sp]
 
-                anomaly_scores, labels = [], []
+                filt_df = fill_predictions(track_id=track_id,
+                                           patient_id=patient_id,
+                                           anomaly_scores=filt_df['anomaly_scores'],
+                                           split=sp,
+                                           days=filt_df['day_index'])
 
-                for sp in df['split'].unique():
-                    mode, num = sp.split("_")[0], int(sp.split("_")[1])
-                    filt_df = df[df['split'] == sp]
+                path_to_save = parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num)
+                filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
 
-                    filt_df = fill_predictions(track_id=track_id,
-                                               patient_id=patient_id,
-                                               anomaly_scores=filt_df['anomaly_scores'],
-                                               split=sp,
-                                               days=filt_df['day_index'])
-
-                    path_to_save = parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num)
-                    filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
-
-                    anomaly_scores.append(filt_df['anomaly_scores'].to_numpy())
-                    labels.append(filt_df['relapse'].to_numpy())
+                anomaly_scores.append(filt_df['anomaly_scores'].to_numpy())
+                labels.append(filt_df['relapse'].to_numpy())
 
             anomaly_scores, labels = np.concatenate(anomaly_scores), np.concatenate(labels)
-            anomaly_scores_random = np.random.random(size=len(anomaly_scores))
+            anomaly_scores_random = np.repeat(0.5, len(anomaly_scores))
 
             scores = calculate_roc_pr_auc(anomaly_scores, labels)
 
