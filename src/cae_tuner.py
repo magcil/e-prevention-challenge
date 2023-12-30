@@ -70,7 +70,7 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
                 # Forward
                 org_features, mask = d["features"], d["mask"]
                 org_features, mask = org_features.to(device), mask.to(device)
-                reco_features, _ = model(org_features) * mask
+                reco_features = model(org_features)[0] * mask
 
                 loss = loss_fn(org_features, reco_features)
                 train_loss += loss.item()
@@ -89,7 +89,7 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
                     # Forward
                     org_features, mask = d["features"], d["mask"]
                     org_features, mask = org_features.to(device), mask.to(device)
-                    reco_features, _ = model(org_features) * mask
+                    reco_features = model(org_features)[0] * mask
 
                     loss = loss_fn(org_features, reco_features)
                     val_loss += loss.item()
@@ -137,7 +137,7 @@ def validation_loop(train_dset, test_dset, model, device):
             # Inference
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
-            reco_features, _ = model(features) * mask
+            reco_features = model(features)[0] * mask
 
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
@@ -150,7 +150,7 @@ def validation_loop(train_dset, test_dset, model, device):
             # Inference
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
-            reco_features, _ = model(features) * mask
+            reco_features = model(features)[0] * mask
 
             loss = loss_fn(features, reco_features)
             val_losses.append(loss.item())
@@ -199,12 +199,12 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
                                    scheduler_name=scheduler_name,
                                    pt_file=pt_file,
                                    device=device)
-    print("best score: ", best_score)
+    print("best score (average aucs): ", best_score)
     # Save the best model within the objective function
     path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
                                     json_config['pretrained_models'])
     model_name = os.path.join(path_of_pt_files, 'p' + str(patient_id) + '_cae_best_model.pth')
-    
+
     torch.save(model, model_name)
 
     # Get results and write outputs
@@ -318,7 +318,7 @@ if __name__ == '__main__':
                                                 val_dset=val_dset, test_dset=test_dset)
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective_with_args, n_trials=5)
+        study.optimize(objective_with_args, n_trials=1)
 
         best_params = study.best_params
         print("Best Hyperparameters:", best_params)
