@@ -92,8 +92,46 @@ def sigmoid(x):
     z = 1/(1 + np.exp(-x))
     return z
 
+def normalized_aggregation(split_day, df_svm, metric, std):
+    anomaly_scores, labels = [], []
+    for s_d in np.unique(split_day):
+        df_svm_filt = df_svm[df_svm['split_day'] == s_d]
+        df_svm_filt["dist_from_hp"] = df_svm_filt["dist_from_hp"].apply(lambda x: sigmoid(x / std))
+        if metric == "mean":
+            score = np.mean(df_svm_filt["dist_from_hp"])
+        elif metric == "median":
+            score = np.median(df_svm_filt["dist_from_hp"])
+        elif metric == "percentile":
+            score = np.percentile(df_svm_filt["dist_from_hp"], 90)
+        if score > 1:
+            score = 1
+        anomaly_scores.append(score)
+        labels.append(df_svm_filt['label'].iloc[0])
+    return anomaly_scores, labels
 
-def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
+def weighted_hard_decision(split_day, df_svm, metric, std):
+    anomaly_scores, labels = [], []
+    for s_d in np.unique(split_day):
+        df_svm_filt = df_svm[df_svm['split_day'] == s_d]
+        dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
+
+        if len(dist_from_hp) > 1:
+            min_, max_ = dist_from_hp.min(), dist_from_hp.max()
+            if max_ == min_:
+                median = 1
+            else:
+                median = ((dist_from_hp.median() - min_) / (max_ - min_)) + 1
+        else:
+            median = 1
+        score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
+        if score > 1:
+            score = 1
+        anomaly_scores.append(score)
+        labels.append(df_svm_filt['label'].iloc[0])
+    return anomaly_scores, labels
+
+
+def validation_loop(train_dset, test_dset, model, device, test_metric, one_class_test=False):
     test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     loss_fn = nn.MSELoss().to(device=device)
@@ -102,8 +140,6 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
     # Check if one class SVM test is true
     if one_class_test:
         detector = OneClassSVM()
-        #detector = EllipticEnvelope()
-        #detector = LocalOutlierFactor(novelty=True)
         scaler = StandardScaler()
 
     # Loop over train and determine distribution
@@ -115,14 +151,11 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
             reco_features, emb = model(features)
-            #print('emb shape:', emb.shape)
             reco_features = reco_features * mask
 
             if one_class_test:
-                #train_embeddings.append(np.squeeze(emb.cpu().numpy()).flatten())
                 train_embeddings.append(emb.cpu().numpy().flatten())
 
-            #print('Calculating loss...')
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
     # Calculate mean & std and fit Normal distribution
@@ -147,7 +180,6 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             reco_features = reco_features * mask
 
             if one_class_test:
-                #test_embeddings.append(np.squeeze(emb.cpu().numpy()).flatten())
                 test_embeddings.append(emb.cpu().numpy().flatten())
 
             loss = loss_fn(features, reco_features)
@@ -170,6 +202,20 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
 
     # Else with embeddings
     else:
+        # Dictionary mapping values to functions
+        cases = {
+            "median": normalized_aggregation,
+            "mean": normalized_aggregation,
+            "percentile": normalized_aggregation,
+            "weighted_hard_decision": weighted_hard_decision
+        }
+
+        # Get the function based on the value of my_variable
+        selected_metric = cases.get(test_metric)
+
+        # Call the selected function
+        compute_metric = selected_metric()
+
         test_embeddings = scaler.transform(np.vstack(test_embeddings))
         print('len test embeddings after scaler:', len(test_embeddings))
         preds = detector.predict(test_embeddings)
@@ -182,22 +228,9 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
 
         std = np.std(df_svm["dist_from_hp"])
 
-        anomaly_scores, labels = [], []
         # Calculate anomaly score for each pair (split, day_index)
+        anomaly_scores, labels = compute_metric(split_day, df_svm, test_metric, std)
 
-        for s_d in np.unique(split_day):
-            df_svm_filt = df_svm[df_svm['split_day'] == s_d]
-            #dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
-            df_svm_filt["dist_from_hp"] = df_svm_filt["dist_from_hp"].apply(lambda x: sigmoid(x / std))
-            
-            #score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
-            #score = np.median(df_svm_filt["dist_from_hp"])
-            score = np.percentile(df_svm_filt["dist_from_hp"], 90)
-            if score > 1:
-                score = 1
-            anomaly_scores.append(score)
-            #anomaly_scores.append(df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
-            labels.append(df_svm_filt['label'].iloc[0])
 
         print('anomaly scores:', anomaly_scores)
         return {"anomaly_scores": np.array(anomaly_scores), "labels": np.array(labels, dtype=np.int64)}
