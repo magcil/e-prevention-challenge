@@ -8,6 +8,10 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+
+from torch.optim import Adam
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -17,12 +21,14 @@ from scipy.stats import norm
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
 from models.convolutional_autoencoder import Autoencoder, UNet
+
 from models.anomaly_transformer import *
 from models import anomaly_transformer as vits
 from datasets.dataset import PatientDataset
 import utils.parse as parser
 from training.loops import autoencoder_train_loop, validation_loop
 from utils.util_funcs import fill_predictions
+
 
 
 def parse_args():
@@ -42,6 +48,7 @@ def get_model(model_str: str):
         student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, 32])
         model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     return model
+
 
 
 if __name__ == '__main__':
@@ -81,11 +88,13 @@ if __name__ == '__main__':
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
 
+
         # Initialize patient's dataset and split to train/val -> Same split for each model
         X = parser.get_features(track_id=track_id,
                                 patient_id=patient_id,
                                 mode="train",
                                 extension=json_config['file_format'])
+
 
         X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
 
@@ -131,6 +140,7 @@ if __name__ == '__main__':
         for model_str in tqdm(models, desc="Validating model", leave=False):
             model = get_model(model_str=model_str)
 
+
             # Check for model transfer learning / works when only one model is given
             if "transfer_learning" in json_config.keys():
                 model.load_state_dict(torch.load(json_config["transfer_learning"]))
@@ -152,6 +162,7 @@ if __name__ == '__main__':
                                                     pt_file=pt_file,
                                                     device=device,
                                                     num_workers=json_config['num_workers'])
+
 
             results["Rec Loss (train)"].append(rec_loss_train)
 
@@ -177,6 +188,7 @@ if __name__ == '__main__':
             test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
             # Get results and write outputs
+
             if ((patient_id == 1) or (patient_id == 8)):
                 one_class_test = 0
                 val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
@@ -243,6 +255,7 @@ if __name__ == '__main__':
 
             anomaly_scores, labels = np.concatenate(anomaly_scores), np.concatenate(labels)
             anomaly_scores_random = np.random.random(size=len(anomaly_scores))
+
 
             # Compute metrics
             precision, recall, _ = precision_recall_curve(labels, anomaly_scores)

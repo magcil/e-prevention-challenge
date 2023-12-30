@@ -93,6 +93,7 @@ class PatientDataset(Dataset):
             "mask": torch.unsqueeze(torch.from_numpy(mask), dim=0),
             "split": split,
             "day_index": day_index,
+
             "label": label,
             "patient_id": torch.tensor(self.patient_id, dtype=torch.int64)
         }
