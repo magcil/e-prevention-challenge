@@ -70,7 +70,7 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
                 # Forward
                 org_features, mask = d["features"], d["mask"]
                 org_features, mask = org_features.to(device), mask.to(device)
-                reco_features = model(org_features) * mask
+                reco_features, _ = model(org_features) * mask
 
                 loss = loss_fn(org_features, reco_features)
                 train_loss += loss.item()
@@ -89,7 +89,7 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
                     # Forward
                     org_features, mask = d["features"], d["mask"]
                     org_features, mask = org_features.to(device), mask.to(device)
-                    reco_features = model(org_features) * mask
+                    reco_features, _ = model(org_features) * mask
 
                     loss = loss_fn(org_features, reco_features)
                     val_loss += loss.item()
@@ -137,7 +137,7 @@ def validation_loop(train_dset, test_dset, model, device):
             # Inference
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
-            reco_features = model(features) * mask
+            reco_features, _ = model(features) * mask
 
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
@@ -150,7 +150,7 @@ def validation_loop(train_dset, test_dset, model, device):
             # Inference
             features, mask = d['features'], d['mask']
             features, mask = features.to(device), mask.to(device)
-            reco_features = model(features) * mask
+            reco_features, _ = model(features) * mask
 
             loss = loss_fn(features, reco_features)
             val_losses.append(loss.item())
@@ -169,68 +169,16 @@ def validation_loop(train_dset, test_dset, model, device):
     return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
 
 
-def objective(trial, track_id, patient_id, json_config, feature_mapping):
+def objective(trial, track_id, patient_id, json_config, window_size, train_dset, whole_train_dset, val_dset, test_dset):
     #window_size = trial.suggest_categorical('window_size', [48, 128, 160])
     #upsampling_size = trial.suggest_categorical('upsampling_size', [50, 100, 200, 500])
-    window_size = 32
-    upsampling_size = 120
-    #latent_dim = trial.suggest_categorical('latent_dim', [32, 64, 128, 256])
+
     num_layers = trial.suggest_int('num_layers', 3, 6)
     # Ensure that num_units correspond to the specified num_layers
     num_channels = [1] + [2 ** (i + 2) for i in range(num_layers)]
     learning_rate = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
     #scheduler_name = trial.suggest_categorical('scheduler', [None, 'StepLR', 'CosineAnnealingLR', 'ReduceLROnPlateau'])
     scheduler_name = 'CosineAnnealingLR'
-    # Initialize patient's dataset and split to train/val -> Same split for each model
-    X = parser.get_features(track_id=track_id, patient_id=patient_id, mode="train")
-
-    X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
-
-    train_dset = PatientDataset(track_id=track_id,
-                                patient_id=patient_id,
-                                mode="train",
-                                window_size=window_size,
-                                extension=json_config['file_format'],
-                                feature_mapping=feature_mapping,
-                                patient_features=X_train,
-                                from_path=False)
-    # Calculate statistics (mean, std) on train and pass to other datasets
-    train_dset._cal_statistics()
-    mu, std = train_dset.mean, train_dset.std
-    val_dset = PatientDataset(track_id=track_id,
-                              patient_id=patient_id,
-                              mode="train",
-                              window_size=window_size,
-                              extension=json_config['file_format'],
-                              feature_mapping=feature_mapping,
-                              patient_features=X_val,
-                              from_path=False)
-
-    val_dset.mean, val_dset.std = mu, std
-    test_dset = PatientDataset(track_id=track_id,
-                               patient_id=patient_id,
-                               mode="val",
-                               window_size=window_size,
-                               extension=json_config["file_format"],
-                               feature_mapping=feature_mapping,
-                               from_path=True)
-
-    test_dset.mean, test_dset.std = mu, std
-
-    # Re-initialize training set to fit distribution on losses
-    whole_train_dset = PatientDataset(track_id=track_id,
-                                      patient_id=patient_id,
-                                      mode="train",
-                                      window_size=window_size,
-                                      extension=json_config["file_format"],
-                                      feature_mapping=feature_mapping,
-                                      from_path=True)
-    whole_train_dset.mean, whole_train_dset.std = mu, std
-    # Upsample train/val sets
-    train_dset._upsample_data(upsample_size=upsampling_size)
-    val_dset._upsample_data(upsample_size=upsampling_size)
-    test_dset._upsample_data(upsample_size=upsampling_size)
-    whole_train_dset._upsample_data(upsample_size=upsampling_size)
 
     path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
                                     json_config['pretrained_models'])
@@ -253,7 +201,7 @@ def objective(trial, track_id, patient_id, json_config, feature_mapping):
                                    device=device)
     print("best score: ", best_score)
     # Save the best model within the objective function
-    model_name = 'p' + str(patient_id) + '_best_model.pth'
+    model_name = 'p' + str(patient_id) + '_cae_best_model.pth'
     torch.save(model, model_name)
 
     # Get results and write outputs
@@ -305,8 +253,66 @@ if __name__ == '__main__':
 
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
+
+        ################### Load data ###################################
+        window_size = 32
+        upsampling_size = 120
+        # Initialize patient's dataset and split to train/val -> Same split for each model
+        X = parser.get_features(track_id=track_id, patient_id=patient_id, mode="train")
+
+        X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
+
+        train_dset = PatientDataset(track_id=track_id,
+                                    patient_id=patient_id,
+                                    mode="train",
+                                    window_size=window_size,
+                                    extension=json_config['file_format'],
+                                    feature_mapping=feature_mapping,
+                                    patient_features=X_train,
+                                    from_path=False)
+        # Calculate statistics (mean, std) on train and pass to other datasets
+        train_dset._cal_statistics()
+        mu, std = train_dset.mean, train_dset.std
+        val_dset = PatientDataset(track_id=track_id,
+                                  patient_id=patient_id,
+                                  mode="train",
+                                  window_size=window_size,
+                                  extension=json_config['file_format'],
+                                  feature_mapping=feature_mapping,
+                                  patient_features=X_val,
+                                  from_path=False)
+
+        val_dset.mean, val_dset.std = mu, std
+        test_dset = PatientDataset(track_id=track_id,
+                                   patient_id=patient_id,
+                                   mode="val",
+                                   window_size=window_size,
+                                   extension=json_config["file_format"],
+                                   feature_mapping=feature_mapping,
+                                   from_path=True)
+
+        test_dset.mean, test_dset.std = mu, std
+
+        # Re-initialize training set to fit distribution on losses
+        whole_train_dset = PatientDataset(track_id=track_id,
+                                          patient_id=patient_id,
+                                          mode="train",
+                                          window_size=window_size,
+                                          extension=json_config["file_format"],
+                                          feature_mapping=feature_mapping,
+                                          from_path=True)
+        whole_train_dset.mean, whole_train_dset.std = mu, std
+        # Upsample train/val sets
+        train_dset._upsample_data(upsample_size=upsampling_size)
+        val_dset._upsample_data(upsample_size=upsampling_size)
+        test_dset._upsample_data(upsample_size=upsampling_size)
+        whole_train_dset._upsample_data(upsample_size=upsampling_size)
+
+        #################### Run tuner #################################
         objective_with_args = functools.partial(objective, track_id=track_id, patient_id=patient_id,
-                                                json_config=json_config, feature_mapping=feature_mapping)
+                                                json_config=json_config, window_size=window_size,
+                                                train_dset=train_dset, whole_train_dset=whole_train_dset,
+                                                val_dset=val_dset, test_dset=test_dset)
 
         study = optuna.create_study(direction='maximize')
         study.optimize(objective_with_args, n_trials=5)
