@@ -46,6 +46,7 @@ def get_model(model_str: str):
 if __name__ == '__main__':
 
     # Parse args
+    print('STarting!')
     args = parse_args()
     with open(args.config, "r") as f:
         json_config = json.load(f)
@@ -58,49 +59,13 @@ if __name__ == '__main__':
     models = json_config["models"]
     path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
                                     json_config['pretrained_models'])
+    print('path of pt files:', path_of_pt_files)
 
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     print('json config:', json_config['one_class_test']==True)
 
-    # Check for One Class Svm test
-    """if "one_class_test" in json_config.keys() and json_config['one_class_test'] == True:
-        results = {
-            "Patient_id": [],
-            "Model": [],
-            "Rec Loss (train)": [],
-            "ROC AUC": [],
-            "PR AUC": [],
-            "ROC AUC (random)": [],
-            "PR AUC (random)": [],
-            "Total days on train": [],
-            "Total days (relapsed)": [],
-            "Total days (non relapsed)": []
-        }
-        one_class_test = True
-    else:
-        # These are the results to display at the end of the experiment
-        results = {
-            "Patient_id": [],
-            "Model": [],
-            "Rec Loss (train)": [],
-            "Rec Loss (relapsed)": [],
-            "Rec Loss (non relapsed)": [],
-            "Distribution Loss (mean)": [],
-            "Distribution Loss (std)": [],
-            "ROC AUC": [],
-            "PR AUC": [],
-            "Mean anomaly score (relapsed)": [],
-            "Mean anomaly score (non relapsed)": [],
-            "ROC AUC (random)": [],
-            "PR AUC (random)": [],
-            "Total days on train": [],
-            "Total days (relapsed)": [],
-            "Total days (non relapsed)": []
-        }
-        one_class_test = False
-    """
     results = {
             "Patient_id": [],
             "Model": [],
@@ -128,7 +93,6 @@ if __name__ == '__main__':
                                 patient_id=patient_id,
                                 mode="train",
                                 extension=json_config['file_format'])
-
         X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
 
         train_dset = PatientDataset(track_id=track_id,
@@ -284,7 +248,7 @@ if __name__ == '__main__':
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4a.csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4b.csv")
 
             if not one_class_test:
                 patient_path = parser.get_path(track_id, patient_id)

@@ -191,7 +191,7 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             df_svm_filt["dist_from_hp"] = df_svm_filt["dist_from_hp"].apply(lambda x: sigmoid(x / std))
             
             #score = median * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
-            score = np.mean(df_svm_filt["dist_from_hp"])
+            score = np.median(df_svm_filt["dist_from_hp"])
             if score > 1:
                 score = 1
             anomaly_scores.append(score)
