@@ -61,6 +61,7 @@ class EarlyStopping:
         save(model.state_dict(), self.path)
         self.val_loss_min = val_loss
 
+
 class EarlyStoppingAUC:
     """Early stops the training if validation loss doesn't improve after a given patience."""
 
@@ -105,4 +106,3 @@ class EarlyStoppingAUC:
             self.best_model = model
             self.best_epoch = epoch
             self.counter = 0
-

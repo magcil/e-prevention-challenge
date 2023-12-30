@@ -169,4 +169,5 @@ class UNet(nn.Module):
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.up_part[idx + 1](concat_skip)
 
+
         return self.output(x)
