@@ -253,7 +253,7 @@ def objective(trial, track_id, patient_id, json_config, feature_mapping):
                                    device=device)
     print("best score: ", best_score)
     # Save the best model within the objective function
-    model_name = str(patient_id) + '_best_model.pth'
+    model_name = 'p' + str(patient_id) + '_best_model.pth'
     torch.save(model, model_name)
 
     # Get results and write outputs
