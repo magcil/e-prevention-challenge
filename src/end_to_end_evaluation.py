@@ -284,7 +284,7 @@ if __name__ == '__main__':
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4a.csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4b.csv")
 
             if not one_class_test:
                 patient_path = parser.get_path(track_id, patient_id)
