@@ -201,7 +201,10 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
                                    device=device)
     print("best score: ", best_score)
     # Save the best model within the objective function
-    model_name = 'p' + str(patient_id) + '_cae_best_model.pth'
+    path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
+                                    json_config['pretrained_models'])
+    model_name = os.path.join(path_of_pt_files, 'p' + str(patient_id) + '_cae_best_model.pth')
+    
     torch.save(model, model_name)
 
     # Get results and write outputs
