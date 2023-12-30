@@ -158,6 +158,8 @@ if __name__ == '__main__':
                                                     pt_file=pt_file,
                                                     device=device,
                                                     num_workers=json_config['num_workers'])
+            
+            
 
             results["Rec Loss (train)"].append(rec_loss_train)
 
