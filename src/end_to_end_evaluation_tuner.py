@@ -117,10 +117,10 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
         ear_stopping(score, model, epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
-            return ear_stopping.best_score, ear_stopping.best_model
+            return ear_stopping.best_score, ear_stopping.best_model, ear_stopping.best_epoch
         train_loss, val_loss = 0.0, 0.0
 
-    return ear_stopping.best_score, ear_stopping.best_model
+    return ear_stopping.best_score, ear_stopping.best_model, ear_stopping.best_epoch
 
 
 def validation_loop(train_dset, test_dset, model, device):
@@ -239,7 +239,7 @@ def objective(trial, track_id, patient_id, json_config, feature_mapping):
                            f"Track_{track_id}_P{patient_id}_" + "Autoencoder_2" + "_" + str(datetime.today()) + ".pt")
     model = Autoencoder_2((window_size, 16), num_channels)
     # Start training
-    best_score, model = train_loop(train_dset=train_dset,
+    best_score, model, best_epoch = train_loop(train_dset=train_dset,
                                    whole_train=whole_train_dset,
                                    val_dset=val_dset,
                                    test_dset=test_dset,
@@ -253,7 +253,8 @@ def objective(trial, track_id, patient_id, json_config, feature_mapping):
                                    device=device)
     print("best score: ", best_score)
     # Save the best model within the objective function
-    torch.save(model, 'best_model.pth')
+    model_name = str(patient_id) + '_best_model.pth'
+    torch.save(model, model_name)
 
     # Get results and write outputs
     val_results = validation_loop(whole_train_dset, test_dset, model, device)
@@ -278,7 +279,8 @@ def objective(trial, track_id, patient_id, json_config, feature_mapping):
 
 
     # Additional information you want to return along with the validation loss
-    additional_info = {'ROC AUC': roc_auc, 'PR AUC': pr_auc, "ROC AUC (random)": random_roc_auc, "PR AUC (random)": random_pr_auc}
+    additional_info = {'ROC AUC': roc_auc, 'PR AUC': pr_auc, "ROC AUC (random)": random_roc_auc, "PR AUC (random)": random_pr_auc,
+                       'Best epoch': best_epoch}
     trial.set_user_attr('additional_info', additional_info)  # Store additional_info in user_attrs
     trial.report(score, step=trial.number)
     if trial.should_prune():

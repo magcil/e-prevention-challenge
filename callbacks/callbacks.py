@@ -87,11 +87,13 @@ class EarlyStoppingAUC:
         self.path = path
         self.trace_func = trace_func
         self.best_model = None
+        self.best_epoch = None
     def __call__(self, score, model, epoch):
 
         if self.best_score is None:
             self.best_score = score
             self.best_model = model
+            self.best_epoch = epoch
         elif score < self.best_score + self.delta:
             self.counter += 1
             if self.counter >= int(0.8 * self.patience):
@@ -101,5 +103,6 @@ class EarlyStoppingAUC:
         else:
             self.best_score = score
             self.best_model = model
+            self.best_epoch = epoch
             self.counter = 0
 
