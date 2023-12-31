@@ -11,7 +11,7 @@
     "track_id": 1,
     "patients": [3],
     "epochs": 100,
-    "patience": 20,
+    "patience": 10,
     "learning_rate": 1e-3,
     "file_format": ".parquet",
     "split_ratio": 0.8,

@@ -205,7 +205,7 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
                                     json_config['pretrained_models'])
     model_name = os.path.join(path_of_pt_files, 'p' + str(patient_id) + '_cae_best_model.pth')
 
-    torch.save(model, model_name)
+    torch.save(model.state_dict(), model_name)
 
     # Get results and write outputs
     val_results = validation_loop(whole_train_dset, test_dset, model, device)
@@ -318,7 +318,7 @@ if __name__ == '__main__':
                                                 val_dset=val_dset, test_dset=test_dset)
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective_with_args, n_trials=1)
+        study.optimize(objective_with_args, n_trials=5)
 
         best_params = study.best_params
         print("Best Hyperparameters:", best_params)
