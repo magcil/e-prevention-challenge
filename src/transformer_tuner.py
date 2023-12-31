@@ -339,6 +339,8 @@ if __name__ == '__main__':
 
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
 
+        print(f"\n\n{10*'*'} Patient {patient_id} {10*'*'}\n\n")
+
         ################### Load data ###################################
         window_size = 32
         upsampling_size = 120
