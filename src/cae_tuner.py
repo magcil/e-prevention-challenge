@@ -200,12 +200,7 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
                                    pt_file=pt_file,
                                    device=device)
     print("best score (average aucs): ", best_score)
-    # Save the best model within the objective function
-    path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
-                                    json_config['pretrained_models'])
-    model_name = os.path.join(path_of_pt_files, 'p' + str(patient_id) + '_cae_best_model.pth')
 
-    torch.save(model.state_dict(), model_name)
 
     # Get results and write outputs
     val_results = validation_loop(whole_train_dset, test_dset, model, device)
@@ -231,7 +226,7 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
 
     # Additional information you want to return along with the validation loss
     additional_info = {'ROC AUC': roc_auc, 'PR AUC': pr_auc, "ROC AUC (random)": random_roc_auc, "PR AUC (random)": random_pr_auc,
-                       'Best epoch': best_epoch}
+                       'Best epoch': best_epoch, "model": model}
     trial.set_user_attr('additional_info', additional_info)  # Store additional_info in user_attrs
     trial.report(score, step=trial.number)
     if trial.should_prune():
@@ -319,6 +314,13 @@ if __name__ == '__main__':
 
         study = optuna.create_study(direction='maximize')
         study.optimize(objective_with_args, n_trials=5)
+
+        #save best model
+        path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
+                                        json_config['pretrained_models'])
+        model_name = os.path.join(path_of_pt_files, 'p' + str(patient_id) + '_cae_best_model.pth')
+        best_model = study.best_trial.user_attrs['additional_info']["model"]
+        torch.save(best_model.state_dict(), model_name)
 
         best_params = study.best_params
         print("Best Hyperparameters:", best_params)
