@@ -81,7 +81,6 @@ class Autoencoder_2(nn.Module):
             self.encoder.append(nn.ReLU())
             if self.channel_sequence[i] <= 16:
                 self.encoder.append(nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True))
-        print(self.encoder)
 
     def _build_decoder(self):
         self.decoder = nn.Sequential()
@@ -99,8 +98,6 @@ class Autoencoder_2(nn.Module):
         self.decoder.append(nn.ConvTranspose2d(in_channels=reversed[-2],
                                                out_channels=reversed[-1],
                                                kernel_size=(3, 3), stride=1, padding=1))
-        print(self.decoder)
-
     def forward(self, x):
         indices_list = []
         for layer in self.encoder:

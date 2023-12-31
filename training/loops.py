@@ -93,7 +93,7 @@ def sigmoid(x):
     return z
 
 def normalized_aggregation(split_day, df_svm, metric, std):
-    anomaly_scores, labels = [], []
+    anomaly_scores, labels, split_days = [], [], []
     for s_d in np.unique(split_day):
         df_svm_filt = df_svm[df_svm['split_day'] == s_d]
         df_svm_filt["dist_from_hp"] = df_svm_filt["dist_from_hp"].apply(lambda x: sigmoid(x / std))
@@ -107,10 +107,11 @@ def normalized_aggregation(split_day, df_svm, metric, std):
             score = 1
         anomaly_scores.append(score)
         labels.append(df_svm_filt['label'].iloc[0])
-    return anomaly_scores, labels
+        split_days.append(s_d)
+    return anomaly_scores, labels, split_days
 
-def weighted_hard_decision(split_day, df_svm, metric, std):
-    anomaly_scores, labels = [], []
+def weighted_hard_decision(split_day, df_svm):
+    anomaly_scores, labels, split_days = [], [], []
     for s_d in np.unique(split_day):
         df_svm_filt = df_svm[df_svm['split_day'] == s_d]
         dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
@@ -128,7 +129,8 @@ def weighted_hard_decision(split_day, df_svm, metric, std):
             score = 1
         anomaly_scores.append(score)
         labels.append(df_svm_filt['label'].iloc[0])
-    return anomaly_scores, labels
+        split_days.append(s_d)
+    return anomaly_scores, labels, split_days
 
 
 def validation_loop(train_dset, test_dset, model, device, test_metric, one_class_test=False):
@@ -202,38 +204,33 @@ def validation_loop(train_dset, test_dset, model, device, test_metric, one_class
 
     # Else with embeddings
     else:
-        # Dictionary mapping values to functions
-        cases = {
-            "median": normalized_aggregation,
-            "mean": normalized_aggregation,
-            "percentile": normalized_aggregation,
-            "weighted_hard_decision": weighted_hard_decision
-        }
-
-        # Get the function based on the value of my_variable
-        selected_metric = cases.get(test_metric)
-
-        # Call the selected function
-        compute_metric = selected_metric()
-
         test_embeddings = scaler.transform(np.vstack(test_embeddings))
-        print('len test embeddings after scaler:', len(test_embeddings))
+
         preds = detector.predict(test_embeddings)
         dist_from_hyperplane = -1 * (detector.decision_function(test_embeddings))
-        split_day = [split + "_day" + str(day) for split, day in zip(splits, days)]
-        print('len split days:', len(split_day))
-        print('len labels:', len(labels))
-        print('len preds:', len(preds))
-        df_svm = pd.DataFrame({"split_day": split_day, "label": labels, "preds": preds, "dist_from_hp": dist_from_hyperplane})
+        split_day = [split + "_day_" + str(day) for split, day in zip(splits, days)]
+
+        df_svm = pd.DataFrame({
+            "split_day": split_day,
+            "label": labels,
+            "preds": preds,
+            "dist_from_hp": dist_from_hyperplane})
 
         std = np.std(df_svm["dist_from_hp"])
 
         # Calculate anomaly score for each pair (split, day_index)
-        anomaly_scores, labels = compute_metric(split_day, df_svm, test_metric, std)
+        if test_metric == "weighted_hard_decision":
+            df_svm["dist_from_hp"] = df_svm["dist_from_hp"].abs()
+            anomaly_scores, labels, split_days = weighted_hard_decision(split_day, df_svm)
+        else:
+            anomaly_scores, labels, split_days = normalized_aggregation(split_day, df_svm, test_metric, std)
 
 
-        print('anomaly scores:', anomaly_scores)
-        return {"anomaly_scores": np.array(anomaly_scores), "labels": np.array(labels, dtype=np.int64)}
+
+        return {
+            "anomaly_scores": np.array(anomaly_scores),
+            "labels": np.array(labels, dtype=np.int64),
+            "split_days": split_days}
 
 
 def classification_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
