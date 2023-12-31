@@ -16,7 +16,7 @@ from datetime import datetime
 from scipy.stats import norm
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
-from models.convolutional_autoencoder import Autoencoder, UNet
+from models.convolutional_autoencoder import Autoencoder, UNet, Autoencoder_2
 from models.anomaly_transformer import *
 from models import anomaly_transformer as vits
 from datasets.dataset import PatientDataset
@@ -31,14 +31,20 @@ def parse_args():
     return parser.parse_args()
 
 
-def get_model(model_str: str):
+def get_model(model_str, window_size, num_layers):
     if model_str == 'Autoencoder':
         model = Autoencoder()
+    elif model_str == 'Autoencoder_2':
+        num_channels = [1] + [2 ** (i + 2) for i in range(num_layers)]
+        model = Autoencoder_2((window_size, 16), num_channels)
     elif model_str == 'UNet':
         model = UNet(in_channels=1, out_channels=1)
     elif model_str == 'AnomalyTransformer':
         print('vits dict:', vits.__dict__)
-        student = vits.__dict__['vit_base'](in_chans=1, img_size=[16,32])
+        student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size])
+        model = FullPipline(student, CLSHead(512, 256), RECHead(768))
+    elif model_str == 'AnomalyTransformer_2':
+        student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size, num_layers])
         model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     return model
 
@@ -56,11 +62,12 @@ if __name__ == '__main__':
     patients = json_config["patients"]
     window_size = json_config["window_size"]
     upsampling_size = json_config["upsampling_size"]
-    models = json_config["models"]
+    num_layers = json_config["num_layers"]
+    model_str = json_config["model"]
     path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
                                     json_config['pretrained_models'])
-    print('path of pt files:', path_of_pt_files)
-
+    one_class_test = json_config["one_class_test"]
+    test_metric = json_config["test_metric"]
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -85,9 +92,8 @@ if __name__ == '__main__':
             "Total days (relapsed)": [],
             "Total days (non relapsed)": []
         }
-
+    cnt = 0
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
-        
         # Initialize patient's dataset and split to train/val -> Same split for each model
         X = parser.get_features(track_id=track_id,
                                 patient_id=patient_id,
@@ -133,15 +139,17 @@ if __name__ == '__main__':
         train_dset._upsample_data(upsample_size=upsampling_size)
         val_dset._upsample_data(upsample_size=upsampling_size)
 
-        # Train and validate for each model
-        for model_str in tqdm(models, desc="Validating model", leave=False):
-            model = get_model(model_str=model_str)
 
-            # Check for model transfer learning / works when only one model is given
-            if "transfer_learning" in json_config.keys():
-                model.load_state_dict(torch.load(json_config["transfer_learning"]))
-                print("Transfer learning from all data.")
+        model = get_model(model_str, window_size, num_layers[cnt])
 
+        # Check for model transfer learning / works when only one model is given
+        if "transfer_learning" in json_config.keys():
+            model.load_state_dict(torch.load(json_config["transfer_learning"]))
+            print("Transfer learning from all data.")
+
+        if json_config["saved_checkpoint"][cnt]:
+            pt_file = json_config["saved_checkpoint"][cnt]
+        else:
             # Get patient's path to store pt files
             pt_file = os.path.join(
                 path_of_pt_files,
@@ -163,99 +171,80 @@ if __name__ == '__main__':
 
             results["Rec Loss (train)"].append(rec_loss_train)
 
-            # Load best model and validate
-            model.load_state_dict(torch.load(pt_file, map_location=device))
-            # Re-initialize training set to fit distribution on losses
-            train_dset = PatientDataset(track_id=track_id,
-                                        patient_id=patient_id,
-                                        mode="train",
-                                        window_size=window_size,
-                                        extension=json_config["file_format"],
-                                        feature_mapping=feature_mapping,
-                                        from_path=True)
-            train_dset.mean, train_dset.std = mu, std
+        # Load best model and validate
+        model.load_state_dict(torch.load(pt_file, map_location=device))
+        # Re-initialize training set to fit distribution on losses
+        train_dset = PatientDataset(track_id=track_id,
+                                    patient_id=patient_id,
+                                    mode="train",
+                                    window_size=window_size,
+                                    extension=json_config["file_format"],
+                                    feature_mapping=feature_mapping,
+                                    from_path=True)
+        train_dset.mean, train_dset.std = mu, std
 
-            # Update results
-            results['Total days on train'].append(len(train_dset))
-            results['Model'].append(model_str)
-            results['Patient_id'].append(patient_id)
+        # Update results
+        results['Total days on train'].append(len(train_dset))
+        results['Model'].append(model_str)
+        results['Patient_id'].append(patient_id)
 
-            # Upsample on predictions
-            train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
-            test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
+        # Upsample on predictions
+        train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
+        test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
-            # Get results and write outputs
-            if ((patient_id==0) or (patient_id==10)):
-                one_class_test = 0
-                val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
-            else:
-                one_class_test = 1
-                val_results = validation_loop(train_dset, test_dset, model, device, one_class_test=one_class_test)
+        # Get results and write outputs
+        test_one_class = one_class_test[cnt]
+        val_results = validation_loop(train_dset, test_dset, model, device, test_metric, one_class_test=test_one_class)
 
-            """if not one_class_test:
-                results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
-                results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
 
-                val_losses = val_results['scores']['val_loss'].to_numpy()
-                labels = val_results['scores']['label'].to_numpy()
-                anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
-                anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
-            else:
-                anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
-                anomaly_scores_random = np.random.random(size=len(anomaly_scores))"""
 
-            if ((patient_id == 0) or (patient_id == 0)):
-                results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
-                results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
-                results["Inference Method"].append("MSE Loss")
+        if test_one_class:
+            results["Inference Method"].append("OC-SVM")
+            results["Distribution Loss (mean)"].append(" ")
+            results["Distribution Loss (std)"].append(" ")
+            anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
+            anomaly_scores_random = np.random.random(size=len(anomaly_scores))
+        else:
+            results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
+            results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
+            results["Inference Method"].append("MSE Loss")
 
-                val_losses = val_results['scores']['val_loss'].to_numpy()
-                labels = val_results['scores']['label'].to_numpy()
-                anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
-                anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
-            else:
-                results["Inference Method"].append("OC-SVM")
-                results["Distribution Loss (mean)"].append(" ")
-                results["Distribution Loss (std)"].append(" ")
-                anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
-                anomaly_scores_random = np.random.random(size=len(anomaly_scores))
+            val_losses = val_results['scores']['val_loss'].to_numpy()
+            labels = val_results['scores']['label'].to_numpy()
+            anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
+            anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
 
-            # Compute metrics
-            precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
+        # Compute metrics
+        precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
 
-            fpr, tpr, _ = roc_curve(labels, anomaly_scores)
+        fpr, tpr, _ = roc_curve(labels, anomaly_scores)
 
-            results["ROC AUC"].append(auc(fpr, tpr))
-            results['PR AUC'].append(auc(recall, precision))
+        results["ROC AUC"].append(auc(fpr, tpr))
+        results['PR AUC'].append(auc(recall, precision))
 
-            # Compute metrics for random guess
-            precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
-            fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
-            results["ROC AUC (random)"].append(auc(fpr, tpr))
-            results['PR AUC (random)'].append(auc(recall, precision))
+        # Compute metrics for random guess
+        precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
+        fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
+        results["ROC AUC (random)"].append(auc(fpr, tpr))
+        results['PR AUC (random)'].append(auc(recall, precision))
 
-            results['Total days (non relapsed)'].append(len(labels[labels == 0]))
-            results['Total days (relapsed)'].append(len(labels[labels == 1]))
+        results['Total days (non relapsed)'].append(len(labels[labels == 0]))
+        results['Total days (relapsed)'].append(len(labels[labels == 1]))
 
-            if not one_class_test:
-                results['Mean anomaly score (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
-                results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
-                results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
-                results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))
-            else:
-                results['Mean anomaly score (non relapsed)'].append(" ")
-                results['Mean anomaly score (relapsed)'].append(" ")
-                results['Rec Loss (non relapsed)'].append(" ")
-                results['Rec Loss (relapsed)'].append(" ")                
+        if test_one_class:
+            results['Mean anomaly score (non relapsed)'].append(" ")
+            results['Mean anomaly score (relapsed)'].append(" ")
+            results['Rec Loss (non relapsed)'].append(" ")
+            results['Rec Loss (relapsed)'].append(" ")
+        else:
+            results['Mean anomaly score (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
+            results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
+            results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
+            results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))
 
             # Write csvs
             final_df = pd.DataFrame(results)
-            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4b.csv")
+            final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32_depth12_4c.csv")
 
-            if not one_class_test:
-                patient_path = parser.get_path(track_id, patient_id)
 
-                for split in val_results['split']:
-                    filt_df = val_results['scores'].loc[split]
-                    filt_df.to_csv(
-                        os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
+        cnt += 1
