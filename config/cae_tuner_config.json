@@ -9,7 +9,7 @@
     "time": ["cos_t", "sin_t"]
     },
     "track_id": 1,
-    "patients": [3],
+    "patients": [4, 5, 6, 7, 8, 9],
     "epochs": 100,
     "patience": 10,
     "learning_rate": 1e-3,
