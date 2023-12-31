@@ -41,13 +41,12 @@ def get_model(model_str: str):
 
 
 
-def train_loop(train_dset, whole_train, val_dset, test_dset, model,
-               epochs, batch_size, patience, learning_rate, scheduler_name, pt_file, device):
+def train_loop(train_dloader, whole_train_dloader, val_dloader, test_dloader, model,
+               epochs, patience, learning_rate, scheduler_name, pt_file, device):
 
     # Initialize dataloaders & optimizers
     model = model.to(device)
-    train_dloader = DataLoader(train_dset, batch_size=batch_size, shuffle=True, num_workers=4)
-    val_dloader = DataLoader(val_dset, batch_size=batch_size, shuffle=False, num_workers=4)
+
     optim = Adam(model.parameters(), lr=learning_rate)
     if scheduler_name == 'StepLR':
         scheduler = StepLR(optim, step_size=30, gamma=0.5)
@@ -104,7 +103,7 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
 
         print(f"Epoch {epoch:<{_padding}}/{epochs}. Train Loss: {train_loss:.3f}. Val Loss: {val_loss:.3f}")
         # Get results and write outputs
-        val_results = validation_loop(whole_train, test_dset, model, device)
+        val_results = validation_loop(whole_train_dloader, test_dloader, model, device)
 
         labels = val_results['scores']['label'].tolist()
         anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
@@ -123,9 +122,7 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model,
     return ear_stopping.best_score, ear_stopping.best_model, ear_stopping.best_epoch
 
 
-def validation_loop(train_dset, test_dset, model, device):
-    test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
-    train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
+def validation_loop(train_dloader, test_dloader, model, device):
     loss_fn = nn.MSELoss().to(device=device)
     model = model.to(device)
 
@@ -169,7 +166,8 @@ def validation_loop(train_dset, test_dset, model, device):
     return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
 
 
-def objective(trial, track_id, patient_id, json_config, window_size, train_dset, whole_train_dset, val_dset, test_dset):
+def objective(trial, track_id, patient_id, json_config, window_size, train_dloader, whole_train_dloader,
+              val_dloader, test_dloader):
     #window_size = trial.suggest_categorical('window_size', [48, 128, 160])
     #upsampling_size = trial.suggest_categorical('upsampling_size', [50, 100, 200, 500])
 
@@ -187,23 +185,21 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
                            f"Track_{track_id}_P{patient_id}_" + "Autoencoder_2" + "_" + str(datetime.today()) + ".pt")
     model = Autoencoder_2((window_size, 16), num_channels)
     # Start training
-    best_score, model, best_epoch = train_loop(train_dset=train_dset,
-                                   whole_train=whole_train_dset,
-                                   val_dset=val_dset,
-                                   test_dset=test_dset,
-                                   model=model,
-                                   epochs=json_config["epochs"],
-                                   batch_size=json_config["batch_size"],
-                                   patience=json_config["patience"],
-                                   learning_rate=learning_rate,
-                                   scheduler_name=scheduler_name,
-                                   pt_file=pt_file,
-                                   device=device)
+    best_score, model, best_epoch = train_loop(train_dloader=train_dloader,
+                                               whole_train_dloader=whole_train_dloader,
+                                               val_dloader=val_dloader, test_dloader=test_dloader,
+                                               model=model,
+                                               epochs=json_config["epochs"],
+                                               patience=json_config["patience"],
+                                               learning_rate=learning_rate,
+                                               scheduler_name=scheduler_name,
+                                               pt_file=pt_file,
+                                               device=device)
     print("best score (average aucs): ", best_score)
 
 
     # Get results and write outputs
-    val_results = validation_loop(whole_train_dset, test_dset, model, device)
+    val_results = validation_loop(whole_train_dloader, test_dloader, model, device)
 
     labels = val_results['scores']['label'].tolist()
     anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
@@ -306,14 +302,19 @@ if __name__ == '__main__':
         test_dset._upsample_data(upsample_size=upsampling_size)
         whole_train_dset._upsample_data(upsample_size=upsampling_size)
 
+        train_dloader = DataLoader(train_dset, batch_size=json_config["batch_size"], shuffle=True, num_workers=1)
+        val_dloader = DataLoader(val_dset, batch_size=json_config["batch_size"], shuffle=False, num_workers=1)
+        test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
+        whole_train_dloader = DataLoader(whole_train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
+
         #################### Run tuner #################################
         objective_with_args = functools.partial(objective, track_id=track_id, patient_id=patient_id,
                                                 json_config=json_config, window_size=window_size,
-                                                train_dset=train_dset, whole_train_dset=whole_train_dset,
-                                                val_dset=val_dset, test_dset=test_dset)
+                                                train_dloader=train_dloader, whole_train_dloader=whole_train_dloader,
+                                                val_dloader=val_dloader, test_dloader=test_dloader)
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective_with_args, n_trials=5)
+        study.optimize(objective_with_args, n_trials=1)
 
         #save best model
         path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
