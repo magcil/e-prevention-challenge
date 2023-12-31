@@ -87,7 +87,8 @@ if __name__ == '__main__':
             "PR AUC (random)": [],
             "Total days on train": [],
             "Total days (relapsed)": [],
-            "Total days (non relapsed)": []
+            "Total days (non relapsed)": [],
+            "Test metric": []
     }
     cnt = 0
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
@@ -282,7 +283,10 @@ if __name__ == '__main__':
         results['Total days (non relapsed)'].append(len(labels[labels == 0]))
         results['Total days (relapsed)'].append(len(labels[labels == 1]))
 
-
+        if test_one_class:
+            results['Test metric'].append(test_metric)
+        else:
+            results['Test metric'].append("mse probability")
         '''if test_one_class:
             results['Mean anomaly score (non relapsed)'].append(" ")
             results['Mean anomaly score (relapsed)'].append(" ")
