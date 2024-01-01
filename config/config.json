@@ -9,7 +9,7 @@
     "time": ["cos_t", "sin_t"]
     },
     "track_id": 1,
-    "patients": [2],
+    "patients": [1],
     "epochs": 100,
     "patience": 10,
     "model": "Autoencoder_2",
@@ -21,9 +21,9 @@
     "split_ratio": 0.8,
     "batch_size": 128,
     "pretrained_models": "pretrained_models/",
-    "one_class_test": [1],
+    "one_class_test": [0, 1],
     "num_workers": 4,
-    "saved_checkpoint": ["/Users/sofiaeleftheriou/new_p2_best_model.pth"],
-    "num_layers": [5],
-    "test_metric": "median"
+    "saved_checkpoint": ["/Users/sofiaeleftheriou/repos/e-prevention-challenge/pretrained_models/p1_cae_best_model.pth"],
+    "num_layers": [3],
+    "test_metric": ["median", "mean", "percentile", "percentile_hard_decision", "weighted_hard_decision"]
 }

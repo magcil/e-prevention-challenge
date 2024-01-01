@@ -67,7 +67,7 @@ if __name__ == '__main__':
     path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
                                     json_config['pretrained_models'])
     one_class_test = json_config["one_class_test"]
-    test_metric = json_config["test_metric"]
+    test_metrics = json_config["test_metric"]
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -148,7 +148,7 @@ if __name__ == '__main__':
 
         if json_config["saved_checkpoint"][cnt]:
             pt_file = json_config["saved_checkpoint"][cnt]
-            results["Rec Loss (train)"].append(" ")
+            rec_loss_train = " "
         else:
             # Get patient's path to store pt files
             pt_file = os.path.join(
@@ -166,10 +166,7 @@ if __name__ == '__main__':
                                                     pt_file=pt_file,
                                                     device=device,
                                                     num_workers=json_config['num_workers'])
-            
-            
 
-            results["Rec Loss (train)"].append(rec_loss_train)
 
         # Load best model and validate
         model.load_state_dict(torch.load(pt_file, map_location=device))
@@ -183,122 +180,112 @@ if __name__ == '__main__':
                                     from_path=True)
         train_dset.mean, train_dset.std = mu, std
 
-        # Update results
-        results['Total days on train'].append(len(train_dset))
-        results['Model'].append(model_str)
-        results['Patient_id'].append(patient_id)
+
 
         # Upsample on predictions
         train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
         test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
-        # Get results and write outputs
-        test_one_class = one_class_test[cnt]
-        val_results = validation_loop(train_dset, test_dset, model, device, test_metric, one_class_test=test_one_class)
+
+        val_results = validation_loop(train_dset, test_dset, model, device, test_metrics, patient_id,
+                                      one_class_test=one_class_test, path_of_pt_files=path_of_pt_files)
 
 
+        for i, result in enumerate(val_results):
+            # Update results
+            results["Rec Loss (train)"].append(rec_loss_train)
+            results['Total days on train'].append(len(train_dset))
+            results['Model'].append(model_str)
+            results['Patient_id'].append(patient_id)
+            if not('Distribution Loss (mean)' in result):
+                results['Test metric'].append(result["test_metric"])
+                results["Inference Method"].append("OC-SVM")
+                results["Distribution Loss (mean)"].append(" ")
+                results["Distribution Loss (std)"].append(" ")
+                anomaly_scores, labels = result['anomaly_scores'], result['labels']
+                # Write csvs with predictions
+                patient_path = parser.get_path(track_id, patient_id)
+                df = pd.DataFrame({
+                    "anomaly_scores": anomaly_scores,
+                    "label": labels,
+                    "split_day": result["split_days"]
+                })
 
-        if test_one_class:
-            results["Inference Method"].append("OC-SVM")
-            results["Distribution Loss (mean)"].append(" ")
-            results["Distribution Loss (std)"].append(" ")
-            anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
-            # Write csvs with predictions
-            patient_path = parser.get_path(track_id, patient_id)
-            df = pd.DataFrame({
-                "anomaly_scores": anomaly_scores,
-                "label": labels,
-                "split_day": val_results["split_days"]
-            })
+                df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_day']]
+                df['day_index'] = [int(x.split("_")[3]) for x in df["split_day"]]
 
-            df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_day']]
-            df['day_index'] = [int(x.split("_")[3]) for x in df["split_day"]]
+                anomaly_scores_inter, labels_inter = [], []
+                anomaly_scores, labels = result['anomaly_scores'], result['labels']
+                for sp in df['split'].unique():
+                    mode, num = sp.split("_")[0], int(sp.split("_")[1])
+                    filt_df = df[df['split'] == sp]
 
-            anomaly_scores_inter, labels_inter = [], []
-            anomaly_scores, labels = val_results['anomaly_scores'], val_results['labels']
-            for sp in df['split'].unique():
-                mode, num = sp.split("_")[0], int(sp.split("_")[1])
-                filt_df = df[df['split'] == sp]
+                    filt_df = fill_predictions(track_id=track_id,
+                                               patient_id=patient_id,
+                                               anomaly_scores=filt_df['anomaly_scores'],
+                                               split=sp,
+                                               days=filt_df['day_index'])
 
-                filt_df = fill_predictions(track_id=track_id,
-                                           patient_id=patient_id,
-                                           anomaly_scores=filt_df['anomaly_scores'],
-                                           split=sp,
-                                           days=filt_df['day_index'])
+                    path_to_save = parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num)
+                    filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
 
-                path_to_save = parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num)
-                filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
+                    anomaly_scores_inter.append(filt_df['anomaly_scores'].to_numpy())
+                    labels_inter.append(filt_df['relapse'].to_numpy())
+            else:
+                results['Test metric'].append(result["test_metric"])
+                results["Distribution Loss (mean)"].append(result['Distribution Loss (mean)'])
+                results["Distribution Loss (std)"].append(result['Distribution Loss (std)'])
+                results["Inference Method"].append("MSE Loss")
 
-                anomaly_scores_inter.append(filt_df['anomaly_scores'].to_numpy())
-                labels_inter.append(filt_df['relapse'].to_numpy())
-        else:
-            results["Distribution Loss (mean)"].append(val_results['Distribution Loss (mean)'])
-            results["Distribution Loss (std)"].append(val_results['Distribution Loss (std)'])
-            results["Inference Method"].append("MSE Loss")
+                val_losses = result['scores']['val_loss'].to_numpy()
 
-            val_losses = val_results['scores']['val_loss'].to_numpy()
+                labels = result['scores']['label'].to_numpy()
+                anomaly_scores = result['scores']['anomaly_scores'].to_numpy()
 
-            labels = val_results['scores']['label'].to_numpy()
-            anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
+                anomaly_scores_inter, labels_inter = [], []
 
-            anomaly_scores_inter, labels_inter = [], []
+                # Write csvs with predictions
+                patient_path = parser.get_path(track_id, patient_id)
+                for split in result['split']:
+                    filt_df = result['scores'].loc[split].reset_index(names="day_index")
+                    filt_df = fill_predictions(track_id=track_id,
+                                               patient_id=patient_id,
+                                               anomaly_scores=filt_df['anomaly_scores'],
+                                               split=split,
+                                               days=filt_df["day_index"])
+                    filt_df.to_csv(
+                        os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
 
-            # Write csvs with predictions
-            patient_path = parser.get_path(track_id, patient_id)
-            for split in val_results['split']:
-                filt_df = val_results['scores'].loc[split].reset_index(names="day_index")
-                filt_df = fill_predictions(track_id=track_id,
-                                           patient_id=patient_id,
-                                           anomaly_scores=filt_df['anomaly_scores'],
-                                           split=split,
-                                           days=filt_df["day_index"])
-                filt_df.to_csv(
-                    os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
+                    anomaly_scores_inter.append(filt_df['anomaly_scores'])
+                    labels_inter.append(filt_df['relapse'])
 
-                anomaly_scores_inter.append(filt_df['anomaly_scores'])
-                labels_inter.append(filt_df['relapse'])
+            anomaly_scores_inter, labels_inter = np.concatenate(anomaly_scores_inter), np.concatenate(labels_inter)
 
-        anomaly_scores_inter, labels_inter = np.concatenate(anomaly_scores_inter), np.concatenate(labels_inter)
-
-        anomaly_scores_random = np.random.random(size=len(anomaly_scores))
+            anomaly_scores_random = np.random.random(size=len(anomaly_scores))
 
 
-        # Compute metrics
-        # without interpolation
-        precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
-        fpr, tpr, _ = roc_curve(labels, anomaly_scores)
-        results["ROC AUC"].append(auc(fpr, tpr))
-        results['PR AUC'].append(auc(recall, precision))
+            # Compute metrics
+            # without interpolation
+            precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
+            fpr, tpr, _ = roc_curve(labels, anomaly_scores)
+            results["ROC AUC"].append(auc(fpr, tpr))
+            results['PR AUC'].append(auc(recall, precision))
 
-        #with interpolation
-        precision, recall, _ = precision_recall_curve(labels_inter, anomaly_scores_inter)
-        fpr, tpr, _ = roc_curve(labels_inter, anomaly_scores_inter)
-        results["ROC AUC interpolation"].append(auc(fpr, tpr))
-        results['PR AUC interpolation'].append(auc(recall, precision))
+            #with interpolation
+            precision, recall, _ = precision_recall_curve(labels_inter, anomaly_scores_inter)
+            fpr, tpr, _ = roc_curve(labels_inter, anomaly_scores_inter)
+            results["ROC AUC interpolation"].append(auc(fpr, tpr))
+            results['PR AUC interpolation'].append(auc(recall, precision))
 
-        # Compute metrics for random guess
-        precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
-        fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
-        results["ROC AUC (random)"].append(auc(fpr, tpr))
-        results['PR AUC (random)'].append(auc(recall, precision))
+            # Compute metrics for random guess
+            precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
+            fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
+            results["ROC AUC (random)"].append(auc(fpr, tpr))
+            results['PR AUC (random)'].append(auc(recall, precision))
 
-        results['Total days (non relapsed)'].append(len(labels[labels == 0]))
-        results['Total days (relapsed)'].append(len(labels[labels == 1]))
+            results['Total days (non relapsed)'].append(len(labels[labels == 0]))
+            results['Total days (relapsed)'].append(len(labels[labels == 1]))
 
-        if test_one_class:
-            results['Test metric'].append(test_metric)
-        else:
-            results['Test metric'].append("mse probability")
-        '''if test_one_class:
-            results['Mean anomaly score (non relapsed)'].append(" ")
-            results['Mean anomaly score (relapsed)'].append(" ")
-            results['Rec Loss (non relapsed)'].append(" ")
-            results['Rec Loss (relapsed)'].append(" ")
-        else:
-            results['Mean anomaly score (non relapsed)'].append(np.mean(anomaly_scores[labels == 0]))
-            results['Mean anomaly score (relapsed)'].append(np.mean(anomaly_scores[labels == 1]))
-            results['Rec Loss (non relapsed)'].append(np.mean(val_losses[labels == 0]))
-            results['Rec Loss (relapsed)'].append(np.mean(val_losses[labels == 1]))'''
 
         # Write csvs
         final_df = pd.DataFrame(results)
