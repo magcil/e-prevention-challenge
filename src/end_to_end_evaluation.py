@@ -44,7 +44,7 @@ def get_model(model_str, window_size, num_layers):
         student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size])
         model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     elif model_str == 'AnomalyTransformer_2':
-        student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size, num_layers])
+        student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size], depth=num_layers)
         model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     return model
 
