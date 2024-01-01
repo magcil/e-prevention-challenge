@@ -20,7 +20,7 @@ from sklearn.metrics import accuracy_score, f1_score
 import torch.nn.functional as TF
 
 from callbacks.callbacks import EarlyStopping
-
+import pickle
 
 def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
                            num_workers):
@@ -103,6 +103,8 @@ def normalized_aggregation(split_day, df_svm, metric, std):
             score = np.median(df_svm_filt["dist_from_hp"])
         elif metric == "percentile":
             score = np.percentile(df_svm_filt["dist_from_hp"], 90)
+        elif metric == "percentile_hard_decision":
+            score = np.percentile(df_svm_filt["dist_from_hp"], 90) * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
         if score > 1:
             score = 1
         anomaly_scores.append(score)
@@ -133,16 +135,12 @@ def weighted_hard_decision(split_day, df_svm):
     return anomaly_scores, labels, split_days
 
 
-def validation_loop(train_dset, test_dset, model, device, test_metric, one_class_test=False):
+def validation_loop(train_dset, test_dset, model, device, test_metrics,
+                    patient_id, one_class_test=False, path_of_pt_files=None):
     test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     loss_fn = nn.MSELoss().to(device=device)
     model = model.to(device)
-
-    # Check if one class SVM test is true
-    if one_class_test:
-        detector = OneClassSVM()
-        scaler = StandardScaler()
 
     # Loop over train and determine distribution
     train_losses, train_embeddings = [], []
@@ -155,24 +153,14 @@ def validation_loop(train_dset, test_dset, model, device, test_metric, one_class
             reco_features, emb = model(features)
             reco_features = reco_features * mask
 
-            if one_class_test:
-                train_embeddings.append(emb.cpu().numpy().flatten())
+            train_embeddings.append(emb.cpu().numpy().flatten())
 
             loss = loss_fn(features, reco_features)
             train_losses.append(loss.item())
     # Calculate mean & std and fit Normal distribution
     mu, std = np.mean(train_losses), np.std(train_losses)
-
-    # Fit One class SVM
-    if one_class_test:
-        train_embeddings = np.vstack(train_embeddings)
-        scaler.fit(train_embeddings)
-        train_embeddings = scaler.transform(train_embeddings)
-        detector.fit(train_embeddings)
-
-        test_embeddings = []
-
     val_losses, splits, days, labels = [], [], [], []
+    test_embeddings = []
     with torch.no_grad():
         for d in test_dloader:
             # Inference
@@ -181,56 +169,75 @@ def validation_loop(train_dset, test_dset, model, device, test_metric, one_class
             reco_features, emb = model(features)
             reco_features = reco_features * mask
 
-            if one_class_test:
-                test_embeddings.append(emb.cpu().numpy().flatten())
+            test_embeddings.append(emb.cpu().numpy().flatten())
 
             loss = loss_fn(features, reco_features)
             val_losses.append(loss.item())
             splits.append(d['split'][0])
             days.append(d['day_index'].item())
             labels.append(d['label'].item())
+    returned = []
+    for svm_test in one_class_test:
+        # Fit One class SVM
+        if svm_test:
+            detector = OneClassSVM()
+            scaler = StandardScaler()
+            train_embeddings = np.vstack(train_embeddings)
+            scaler.fit(train_embeddings)
+            train_embeddings = scaler.transform(train_embeddings)
+            detector.fit(train_embeddings)
+            # Save the model to a file using pickle
+            if not os.path.exists(os.path.join(path_of_pt_files, "svms")):
+                # If not, create it
+                os.makedirs(os.path.join(path_of_pt_files, "svms"))
+            model_name = os.path.join(path_of_pt_files, "svms",
+                                      'p' + str(patient_id) + '_svm_best_cae.pth')
+            scaler_name = os.path.join(path_of_pt_files, "svms",
+                                       'p' + str(patient_id) + '_scaler_best_cae.pth')
+            with open(model_name, 'wb') as file:
+                pickle.dump(detector, file)
+            with open(scaler_name, 'wb') as file:
+                pickle.dump(scaler, file)
+            test_embeddings = scaler.transform(np.vstack(test_embeddings))
 
-    # Exract anomaly score with MSE
-    if not one_class_test:
-        df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
-        res = df.groupby(by=["split", "day_index"]).mean()
-        res['label'] = res['label'].astype(int)
-        res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
-        res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
+            preds = detector.predict(test_embeddings)
+            dist_from_hyperplane = -1 * (detector.decision_function(test_embeddings))
+            split_day = [split + "_day_" + str(day) for split, day in zip(splits, days)]
 
-        unique_splits = np.unique(splits).tolist()
+            df_svm = pd.DataFrame({
+                "split_day": split_day,
+                "label": labels,
+                "preds": preds,
+                "dist_from_hp": dist_from_hyperplane})
 
-        return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
-
-    # Else with embeddings
-    else:
-        test_embeddings = scaler.transform(np.vstack(test_embeddings))
-
-        preds = detector.predict(test_embeddings)
-        dist_from_hyperplane = -1 * (detector.decision_function(test_embeddings))
-        split_day = [split + "_day_" + str(day) for split, day in zip(splits, days)]
-
-        df_svm = pd.DataFrame({
-            "split_day": split_day,
-            "label": labels,
-            "preds": preds,
-            "dist_from_hp": dist_from_hyperplane})
-
-        std = np.std(df_svm["dist_from_hp"])
-
-        # Calculate anomaly score for each pair (split, day_index)
-        if test_metric == "weighted_hard_decision":
-            df_svm["dist_from_hp"] = df_svm["dist_from_hp"].abs()
-            anomaly_scores, labels, split_days = weighted_hard_decision(split_day, df_svm)
+            std = np.std(df_svm["dist_from_hp"])
+            for test_metric in test_metrics:
+                # Calculate anomaly score for each pair (split, day_index)
+                if test_metric == "weighted_hard_decision":
+                    df_svm["dist_from_hp"] = df_svm["dist_from_hp"].abs()
+                    anomaly_scores, labels, split_days = weighted_hard_decision(split_day, df_svm)
+                else:
+                    anomaly_scores, labels, split_days = normalized_aggregation(split_day, df_svm, test_metric, std)
+                returned.append({
+                    "anomaly_scores": np.array(anomaly_scores),
+                    "labels": np.array(labels, dtype=np.int64),
+                    "split_days": split_days,
+                    "test_metric": test_metric})
+        # Exract anomaly score with MSE
         else:
-            anomaly_scores, labels, split_days = normalized_aggregation(split_day, df_svm, test_metric, std)
+            df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
+            res = df.groupby(by=["split", "day_index"]).mean()
+            res['label'] = res['label'].astype(int)
+            res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
+            res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
 
-
-
-        return {
-            "anomaly_scores": np.array(anomaly_scores),
-            "labels": np.array(labels, dtype=np.int64),
-            "split_days": split_days}
+            unique_splits = np.unique(splits).tolist()
+            returned.append({"scores": res,
+                             "Distribution Loss (mean)": mu,
+                             "Distribution Loss (std)": std,
+                             "split": unique_splits,
+                             "test_metric": "mse probability"})
+    return returned
 
 
 def classification_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
