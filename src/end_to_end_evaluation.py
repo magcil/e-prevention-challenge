@@ -22,7 +22,9 @@ from models import anomaly_transformer as vits
 from datasets.dataset import PatientDataset
 import utils.parse as parser
 from training.loops import autoencoder_train_loop, validation_loop
-from utils.util_funcs import fill_predictions
+from utils.util_funcs import fill_predictions, calculate_roc_pr_auc
+from scipy.signal import medfilt
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -193,6 +195,11 @@ if __name__ == '__main__':
 
         for i, result in enumerate(val_results):
             # Update results
+            if "postprocessing_filters" in json_config.keys():
+                filter_scores = {}
+                for filter_size in json_config["postprocessing_filters"]:
+                    filter_scores[f'median filter scores ({filter_size})'] = []
+                    filter_scores[f'mean filter scores ({filter_size})'] = []
             results["Rec Loss (train)"].append(rec_loss_train)
             results['Total days on train'].append(len(train_dset))
             results['Model'].append(model_str)
@@ -225,11 +232,23 @@ if __name__ == '__main__':
                                                anomaly_scores=filt_df['anomaly_scores'],
                                                split=sp,
                                                days=filt_df['day_index'])
+                    anomaly_scores_temp = filt_df['anomaly_scores'].to_numpy()
+                    if "postprocessing_filters" in json_config.keys():
+                        for filter_size in json_config["postprocessing_filters"]:
+                            # Median filter
+                            median_anomaly_scores = medfilt(anomaly_scores_temp, filter_size)
+                            filter_scores[f'median filter scores ({filter_size})'].append(median_anomaly_scores)
+
+                            # Mean filter
+                            mean_anomaly_scores = np.convolve(anomaly_scores_temp, np.ones(filter_size) / filter_size,
+                                                              "same")
+
+                            filter_scores[f'mean filter scores ({filter_size})'].append(mean_anomaly_scores)
 
                     path_to_save = parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num)
                     filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
 
-                    anomaly_scores_inter.append(filt_df['anomaly_scores'].to_numpy())
+                    anomaly_scores_inter.append(anomaly_scores_temp)
                     labels_inter.append(filt_df['relapse'].to_numpy())
             else:
                 results['Test metric'].append(result["test_metric"])
@@ -253,10 +272,23 @@ if __name__ == '__main__':
                                                anomaly_scores=filt_df['anomaly_scores'],
                                                split=split,
                                                days=filt_df["day_index"])
+
+                    anomaly_scores_temp = filt_df['anomaly_scores']
+                    if "postprocessing_filters" in json_config.keys():
+                        for filter_size in json_config["postprocessing_filters"]:
+                            # Median filter
+                            median_anomaly_scores = medfilt(anomaly_scores_temp, filter_size)
+                            filter_scores[f'median filter scores ({filter_size})'].append(median_anomaly_scores)
+
+                            # Mean filter
+                            mean_anomaly_scores = np.convolve(anomaly_scores_temp, np.ones(filter_size) / filter_size,
+                                                              "same")
+
+                            filter_scores[f'mean filter scores ({filter_size})'].append(mean_anomaly_scores)
                     filt_df.to_csv(
                         os.path.join(patient_path, split, f"results_{model_str}_{datetime.today().date()}.csv"))
 
-                    anomaly_scores_inter.append(filt_df['anomaly_scores'])
+                    anomaly_scores_inter.append(anomaly_scores_temp)
                     labels_inter.append(filt_df['relapse'])
 
             anomaly_scores_inter, labels_inter = np.concatenate(anomaly_scores_inter), np.concatenate(labels_inter)
@@ -272,6 +304,18 @@ if __name__ == '__main__':
             results['PR AUC'].append(auc(recall, precision))
 
             #with interpolation
+            if "postprocessing_filters" in json_config.keys():
+                for filter_size in json_config["postprocessing_filters"]:
+                    # Median
+                    median_anomaly_scores = np.concatenate(filter_scores[f'median filter scores ({filter_size})'])
+                    scores = calculate_roc_pr_auc(median_anomaly_scores, labels_inter)
+                    results[f'median filter ROC AUC ({filter_size})'] = scores["ROC AUC"]
+                    results[f'median filter PR AUC ({filter_size})'] = scores["PR AUC"]
+                    # Mean filter
+                    mean_anomaly_scores = np.concatenate(filter_scores[f'mean filter scores ({filter_size})'])
+                    scores = calculate_roc_pr_auc(mean_anomaly_scores, labels_inter)
+                    results[f'mean filter ROC AUC ({filter_size})'] = scores["ROC AUC"]
+                    results[f'mean filter PR AUC ({filter_size})'] = scores["PR AUC"]
             precision, recall, _ = precision_recall_curve(labels_inter, anomaly_scores_inter)
             fpr, tpr, _ = roc_curve(labels_inter, anomaly_scores_inter)
             results["ROC AUC interpolation"].append(auc(fpr, tpr))

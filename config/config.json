@@ -25,5 +25,6 @@
     "num_workers": 4,
     "saved_checkpoint": ["/Users/sofiaeleftheriou/repos/e-prevention-challenge/pretrained_models/p1_cae_best_model.pth"],
     "num_layers": [3],
-    "test_metric": ["median", "mean", "percentile", "percentile_hard_decision", "weighted_hard_decision"]
+    "test_metric": ["median", "mean", "percentile", "percentile_hard_decision", "weighted_hard_decision"],
+    "postprocessing_filters": [3, 5]
 }
