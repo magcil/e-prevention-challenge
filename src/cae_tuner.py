@@ -16,14 +16,16 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from datetime import datetime
 from scipy.stats import norm
-from sklearn.metrics import precision_recall_curve, roc_curve, auc
+import optuna
+import functools
+from scipy.signal import medfilt
 
 from models.convolutional_autoencoder import Autoencoder, UNet, Autoencoder_2
 from datasets.dataset import PatientDataset
 from callbacks.callbacks import EarlyStoppingAUC
 import utils.parse as parser
-import optuna
-import functools
+from utils.util_funcs import calculate_roc_pr_auc, fill_predictions
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -40,9 +42,8 @@ def get_model(model_str: str):
     return model
 
 
-
-def train_loop(train_dloader, whole_train_dloader, val_dloader, test_dloader, model,
-               epochs, patience, learning_rate, scheduler_name, pt_file, device):
+def train_loop(train_dloader, whole_train_dloader, val_dloader, test_dloader, model, epochs, patience, learning_rate,
+               scheduler_name, pt_file, device):
 
     # Initialize dataloaders & optimizers
     model = model.to(device)
@@ -103,16 +104,29 @@ def train_loop(train_dloader, whole_train_dloader, val_dloader, test_dloader, mo
 
         print(f"Epoch {epoch:<{_padding}}/{epochs}. Train Loss: {train_loss:.3f}. Val Loss: {val_loss:.3f}")
         # Get results and write outputs
-        val_results = validation_loop(whole_train_dloader, test_dloader, model, device)
+        df = validation_loop(whole_train_dloader, test_dloader, model, device)
 
-        labels = val_results['scores']['label'].tolist()
-        anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
+        anomaly_scores, labels = [], []
+
+        for sp in df['split'].unique():
+            filt_df = df[df['split'] == sp].sort_values(by="day_index")
+
+            filt_df = fill_predictions(track_id=track_id,
+                                       patient_id=patient_id,
+                                       anomaly_scores=filt_df['anomaly_scores'],
+                                       split=sp,
+                                       days=filt_df['day_index'])
+
+            anomaly_scores.append(filt_df['anomaly_scores'].to_numpy())
+            labels.append(filt_df['relapse'].to_numpy())
+
+        labels, anomaly_scores = np.concatenate(labels), np.concatenate(anomaly_scores)
 
         # Compute metrics
-        precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
+        scores = calculate_roc_pr_auc(anomaly_scores, labels)
 
-        fpr, tpr, _ = roc_curve(labels, anomaly_scores)
-        score = (auc(fpr, tpr) + auc(recall, precision)) / 2
+        score = (scores["ROC AUC"] + scores["PR AUC"]) / 2
+
         ear_stopping(score, model, epoch)
         if ear_stopping.early_stop:
             print("Early Stopping.")
@@ -123,7 +137,7 @@ def train_loop(train_dloader, whole_train_dloader, val_dloader, test_dloader, mo
 
 
 def validation_loop(train_dloader, test_dloader, model, device):
-    loss_fn = nn.MSELoss().to(device=device)
+    
     model = model.to(device)
 
     # Loop over train and determine distribution
@@ -136,9 +150,13 @@ def validation_loop(train_dloader, test_dloader, model, device):
             features, mask = features.to(device), mask.to(device)
             reco_features = model(features)[0] * mask
 
-            loss = loss_fn(features, reco_features)
-            train_losses.append(loss.item())
+            # Move to cpu and calculate loss per batch dim
+            loss = (reco_features - features)**2
+            loss = np.mean(loss.cpu().numpy(), axis=(1, 2, 3))
+
+            train_losses.append(loss)
     # Calculate mean & std and fit Normal distribution
+    train_losses = np.concatenate(train_losses)
     mu, std = np.mean(train_losses), np.std(train_losses)
 
     val_losses, splits, days, labels = [], [], [], []
@@ -149,31 +167,36 @@ def validation_loop(train_dloader, test_dloader, model, device):
             features, mask = features.to(device), mask.to(device)
             reco_features = model(features)[0] * mask
 
-            loss = loss_fn(features, reco_features)
-            val_losses.append(loss.item())
-            splits.append(d['split'][0])
-            days.append(d['day_index'].item())
-            labels.append(d['label'].item())
+            # Move to cpu and calculate loss per batch dim
+            loss = (reco_features - features)**2
+            loss = np.mean(loss.cpu().numpy(), axis=(1, 2, 3))
+
+            val_losses.append(loss)
+            splits.append(d['split'])
+            days.append(d['day_index'].numpy())
+            labels.append(d['label'].numpy())
+
+    val_losses, splits, days, labels = np.concatenate(val_losses), np.concatenate(splits), np.concatenate(
+        days), np.concatenate(labels)
 
     df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
     res = df.groupby(by=["split", "day_index"]).mean()
     res['label'] = res['label'].astype(int)
     res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
-    res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
 
-    unique_splits = np.unique(splits).tolist()
+    res.reset_index(names=["split", "day_index"], inplace=True)
 
-    return {"scores": res, "Distribution Loss (mean)": mu, "Distribution Loss (std)": std, "split": unique_splits}
+    return res
 
 
-def objective(trial, track_id, patient_id, json_config, window_size, train_dloader, whole_train_dloader,
-              val_dloader, test_dloader):
+def objective(trial, track_id, patient_id, json_config, window_size, train_dloader, whole_train_dloader, val_dloader,
+              test_dloader):
     #window_size = trial.suggest_categorical('window_size', [48, 128, 160])
     #upsampling_size = trial.suggest_categorical('upsampling_size', [50, 100, 200, 500])
 
     num_layers = trial.suggest_int('num_layers', 3, 6)
     # Ensure that num_units correspond to the specified num_layers
-    num_channels = [1] + [2 ** (i + 2) for i in range(num_layers)]
+    num_channels = [1] + [2**(i + 2) for i in range(num_layers)]
     learning_rate = trial.suggest_loguniform('learning_rate', 1e-6, 1e-3)
     #scheduler_name = trial.suggest_categorical('scheduler', [None, 'StepLR', 'CosineAnnealingLR', 'ReduceLROnPlateau'])
     scheduler_name = 'CosineAnnealingLR'
@@ -187,7 +210,8 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dload
     # Start training
     best_score, model, best_epoch = train_loop(train_dloader=train_dloader,
                                                whole_train_dloader=whole_train_dloader,
-                                               val_dloader=val_dloader, test_dloader=test_dloader,
+                                               val_dloader=val_dloader,
+                                               test_dloader=test_dloader,
                                                model=model,
                                                epochs=json_config["epochs"],
                                                patience=json_config["patience"],
@@ -197,38 +221,81 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dload
                                                device=device)
     print("best score (average aucs): ", best_score)
 
-
     # Get results and write outputs
-    val_results = validation_loop(whole_train_dloader, test_dloader, model, device)
+    df = validation_loop(whole_train_dloader, test_dloader, model, device)
 
-    labels = val_results['scores']['label'].tolist()
-    anomaly_scores = val_results['scores']['anomaly_scores'].to_numpy()
-    anomaly_scores_random = val_results['scores']['anomaly_scores_random'].to_numpy()
+    if "postprocessing_filters" in json_config.keys():
+        filter_scores = {}
+        for filter_size in json_config["postprocessing_filters"]:
+            filter_scores[f'median filter scores ({filter_size})'] = []
+            filter_scores[f'mean filter scores ({filter_size})'] = []
+
+    anomaly_scores, labels = [], []
+
+    for sp in df['split'].unique():
+        filt_df = df[df['split'] == sp].sort_values(by="day_index")
+
+        filt_df = fill_predictions(track_id=track_id,
+                                   patient_id=patient_id,
+                                   anomaly_scores=filt_df['anomaly_scores'],
+                                   split=sp,
+                                   days=filt_df['day_index'])
+
+        anomaly_scores_temp = filt_df['anomaly_scores'].to_numpy()
+        if "postprocessing_filters" in json_config.keys():
+            for filter_size in json_config["postprocessing_filters"]:
+                # Median filter
+                median_anomaly_scores = medfilt(anomaly_scores_temp, filter_size)
+                filter_scores[f'median filter scores ({filter_size})'].append(median_anomaly_scores)
+
+                # Mean filter
+                mean_anomaly_scores = np.convolve(anomaly_scores_temp, np.ones(filter_size) / filter_size, "same")
+
+                filter_scores[f'mean filter scores ({filter_size})'].append(mean_anomaly_scores)
+
+        anomaly_scores.append(anomaly_scores_temp)
+        labels.append(filt_df['relapse'].to_numpy())
+
+    anomaly_scores, labels = np.concatenate(anomaly_scores), np.concatenate(labels)
+    anomaly_scores_random = np.random.random(len(anomaly_scores))
 
     # Compute metrics
-    precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
+    dict_scores = calculate_roc_pr_auc(anomaly_scores, labels)
 
-    fpr, tpr, _ = roc_curve(labels, anomaly_scores)
-    roc_auc = auc(fpr, tpr)
-    pr_auc = auc(recall, precision)
+    score = (dict_scores["ROC AUC"] + dict_scores["PR AUC"]) / 2
 
-    score = (roc_auc + pr_auc) / 2
-
-    precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
-    fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
-    random_roc_auc = auc(fpr, tpr)
-    random_pr_auc = auc(recall, precision)
-
+    dict_scores_random = calculate_roc_pr_auc(anomaly_scores_random, labels)
 
     # Additional information you want to return along with the validation loss
-    additional_info = {'ROC AUC': roc_auc, 'PR AUC': pr_auc, "ROC AUC (random)": random_roc_auc, "PR AUC (random)": random_pr_auc,
-                       'Best epoch': best_epoch, "model": model}
+    additional_info = {
+        'ROC AUC': dict_scores["ROC AUC"],
+        'PR AUC': dict_scores["PR AUC"],
+        "ROC AUC (random)": dict_scores_random["ROC AUC"],
+        "PR AUC (random)": dict_scores_random["PR AUC"],
+        'Best epoch': best_epoch,
+        "model": model
+    }
+
+    if "postprocessing_filters" in json_config.keys():
+        for filter_size in json_config["postprocessing_filters"]:
+            # Median
+            median_anomaly_scores = np.concatenate(filter_scores[f'median filter scores ({filter_size})'])
+            scores = calculate_roc_pr_auc(median_anomaly_scores, labels)
+
+            additional_info[f'median filter ROC AUC ({filter_size})'] = scores["ROC AUC"]
+            additional_info[f'median filter PR AUC ({filter_size})'] = scores["PR AUC"]
+
+            # Mean filter
+            mean_anomaly_scores = np.concatenate(filter_scores[f'mean filter scores ({filter_size})'])
+            scores = calculate_roc_pr_auc(mean_anomaly_scores, labels)
+            additional_info[f'mean filter ROC AUC ({filter_size})'] = scores["ROC AUC"]
+            additional_info[f'mean filter PR AUC ({filter_size})'] = scores["PR AUC"]
+
     trial.set_user_attr('additional_info', additional_info)  # Store additional_info in user_attrs
     trial.report(score, step=trial.number)
     if trial.should_prune():
         raise optuna.TrialPruned()
     return score
-
 
 
 if __name__ == '__main__':
@@ -245,14 +312,16 @@ if __name__ == '__main__':
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
 
         ################### Load data ###################################
         window_size = 32
         upsampling_size = 120
         # Initialize patient's dataset and split to train/val -> Same split for each model
-        X = parser.get_features(track_id=track_id, patient_id=patient_id, mode="train")
+        X = parser.get_features(track_id=track_id,
+                                patient_id=patient_id,
+                                mode="train",
+                                extension=json_config["file_format"])
 
         X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
 
@@ -302,19 +371,38 @@ if __name__ == '__main__':
         test_dset._upsample_data(upsample_size=upsampling_size)
         whole_train_dset._upsample_data(upsample_size=upsampling_size)
 
-        train_dloader = DataLoader(train_dset, batch_size=json_config["batch_size"], shuffle=True, num_workers=1)
-        val_dloader = DataLoader(val_dset, batch_size=json_config["batch_size"], shuffle=False, num_workers=1)
-        test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
-        whole_train_dloader = DataLoader(whole_train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
+        train_dloader = DataLoader(train_dset,
+                                   batch_size=json_config["batch_size"],
+                                   shuffle=True,
+                                   num_workers=json_config["num_workers"])
+        val_dloader = DataLoader(val_dset,
+                                 batch_size=json_config["batch_size"],
+                                 shuffle=False,
+                                 num_workers=json_config["num_workers"])
+        test_dloader = DataLoader(test_dset,
+                                  batch_size=json_config["batch_size"],
+                                  shuffle=False,
+                                  drop_last=False,
+                                  num_workers=json_config["num_workers"])
+        whole_train_dloader = DataLoader(whole_train_dset,
+                                         batch_size=json_config["batch_size"],
+                                         shuffle=False,
+                                         drop_last=False,
+                                         num_workers=json_config["num_workers"])
 
         #################### Run tuner #################################
-        objective_with_args = functools.partial(objective, track_id=track_id, patient_id=patient_id,
-                                                json_config=json_config, window_size=window_size,
-                                                train_dloader=train_dloader, whole_train_dloader=whole_train_dloader,
-                                                val_dloader=val_dloader, test_dloader=test_dloader)
+        objective_with_args = functools.partial(objective,
+                                                track_id=track_id,
+                                                patient_id=patient_id,
+                                                json_config=json_config,
+                                                window_size=window_size,
+                                                train_dloader=train_dloader,
+                                                whole_train_dloader=whole_train_dloader,
+                                                val_dloader=val_dloader,
+                                                test_dloader=test_dloader)
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective_with_args, n_trials=1)
+        study.optimize(objective_with_args, n_trials=json_config["trials"])
 
         #save best model
         path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),
