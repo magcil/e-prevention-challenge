@@ -112,10 +112,6 @@ def train_loop(train_dset, whole_train, val_dset, test_dset, model, epochs, batc
         # Get results and write outputs
         df = validation_loop(whole_train, test_dset, model, device, batch_size=batch_size, num_workers=num_workers)
 
-        # Fill predictions and apply filters
-        df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_days']]
-        df['day_index'] = [int(x.split("_")[3]) for x in df["split_days"]]
-
         anomaly_scores, labels = [], []
 
         for sp in df['split'].unique():
@@ -202,7 +198,6 @@ def validation_loop(train_dset, test_dset, model, device, batch_size, num_worker
     res['anomaly_scores'] = res['val_loss'].map(lambda x: 1 - norm.pdf(x, mu, std) / norm.pdf(mu, mu, std))
 
     res.reset_index(names=["split", "day_index"], inplace=True)
-    res['split_days'] = [split + "_day_" + str(day) for split, day in zip(res['split'], res['day_index'])]
 
     return res
 
@@ -255,9 +250,6 @@ def objective(trial, track_id, patient_id, json_config, window_size, train_dset,
         for filter_size in json_config["postprocessing_filters"]:
             filter_scores[f'median filter scores ({filter_size})'] = []
             filter_scores[f'mean filter scores ({filter_size})'] = []
-
-    df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_days']]
-    df['day_index'] = [int(x.split("_")[3]) for x in df["split_days"]]
 
     anomaly_scores, labels = [], []
 
