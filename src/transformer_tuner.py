@@ -167,9 +167,12 @@ def validation_loop(train_dset, test_dset, model, device, batch_size, num_worker
             reco_features, emb = model(features)
             reco_features = reco_features * mask
 
-            loss = loss_fn(features, reco_features)
-            train_losses.append(loss.item())
+            loss = (reco_features - features) ** 2
+            loss = np.mean(loss.cpu().numpy(), axis=(1, 2, 3))
+            train_losses.append(loss)
+
     # Calculate mean & std and fit Normal distribution
+    train_losses = np.concatenate(train_losses)
     mu, std = np.mean(train_losses), np.std(train_losses)
 
     val_losses, splits, days, labels = [], [], [], []
