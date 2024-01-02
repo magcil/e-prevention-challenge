@@ -405,7 +405,7 @@ if __name__ == '__main__':
                                                 test_dset=test_dset)
 
         study = optuna.create_study(direction='maximize')
-        study.optimize(objective_with_args, n_trials=5)
+        study.optimize(objective_with_args, n_trials=json_config["trials"])
 
         #save best model
         path_of_pt_files = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))),

@@ -18,5 +18,6 @@
     "batch_size": 128,
     "pretrained_models": "pretrained_models/",
     "postprocessing_filters": [3, 5],
-    "num_workers": 8
+    "num_workers": 4,
+    "trials": 5
 }
