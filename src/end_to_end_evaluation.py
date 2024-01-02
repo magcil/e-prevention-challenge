@@ -93,6 +93,13 @@ if __name__ == '__main__':
             "Total days (non relapsed)": [],
             "Test metric": []
     }
+    if "postprocessing_filters" in json_config.keys():
+        for filter_size in json_config["postprocessing_filters"]:
+            results[f'median filter ROC AUC ({filter_size})'] = []
+            results[f'median filter PR AUC ({filter_size})'] = []
+            results[f'mean filter ROC AUC ({filter_size})'] = []
+            results[f'mean filter PR AUC ({filter_size})'] = []
+
     cnt = 0
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
         # Initialize patient's dataset and split to train/val -> Same split for each model
@@ -309,13 +316,13 @@ if __name__ == '__main__':
                     # Median
                     median_anomaly_scores = np.concatenate(filter_scores[f'median filter scores ({filter_size})'])
                     scores = calculate_roc_pr_auc(median_anomaly_scores, labels_inter)
-                    results[f'median filter ROC AUC ({filter_size})'] = scores["ROC AUC"]
-                    results[f'median filter PR AUC ({filter_size})'] = scores["PR AUC"]
+                    results[f'median filter ROC AUC ({filter_size})'].append(scores["ROC AUC"])
+                    results[f'median filter PR AUC ({filter_size})'].append(scores["PR AUC"])
                     # Mean filter
                     mean_anomaly_scores = np.concatenate(filter_scores[f'mean filter scores ({filter_size})'])
                     scores = calculate_roc_pr_auc(mean_anomaly_scores, labels_inter)
-                    results[f'mean filter ROC AUC ({filter_size})'] = scores["ROC AUC"]
-                    results[f'mean filter PR AUC ({filter_size})'] = scores["PR AUC"]
+                    results[f'mean filter ROC AUC ({filter_size})'].append(scores["ROC AUC"])
+                    results[f'mean filter PR AUC ({filter_size})'].append(scores["PR AUC"])
             precision, recall, _ = precision_recall_curve(labels_inter, anomaly_scores_inter)
             fpr, tpr, _ = roc_curve(labels_inter, anomaly_scores_inter)
             results["ROC AUC interpolation"].append(auc(fpr, tpr))
