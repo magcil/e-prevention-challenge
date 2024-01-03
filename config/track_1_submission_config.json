@@ -16,7 +16,8 @@
     "window_size": 32,
     "file_format": ".csv",
     "num_workers": 8,
-
+    "method": 1,
+    "validation_method_description": "trans",
     "patients_config": {
         "P1": {
             "model": "AnomalyTransformer_2",

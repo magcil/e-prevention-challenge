@@ -142,11 +142,14 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
             csv_to_save['anomaly_scores_filtered'] = apply_postprocessing_filter(
                 csv_to_save['anomaly_scores'].to_numpy(), patient_config['filter'], patient_config['filter_size'])
             mode, num = sp.split("_")[0], int(sp.split("_")[1])
+            path_to_save = "val_results/track_" + track_id + "/P" + str(patient_id) + "/" + mode + "_" + str(num)
+            if not os.path.exists(path_to_save):
+                os.makedirs(path_to_save)
 
             # Save validation results
             csv_to_save[["day_index", "relapse", "anomaly_scores", "anomaly_scores_filtered"
-                         ]].to_csv(os.path.join(parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num),
-                                                f"submissions_{datetime.today().date()}.csv"),
+                         ]].to_csv(os.path.join(path_to_save,
+                                                f"submission_{json_config['validation_method_description']}.csv"),
                                    index=False)
 
             aggr_scores.append(csv_to_save['anomaly_scores'].to_numpy())
@@ -229,9 +232,13 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
             # Save validation results
             csv_to_save.rename(columns={"anomaly_scores": "score"}, inplace=True)
 
+            path_to_save = "final_results/track_" + track_id + "/method_" + str(json_config["method"]) + "/P" + str(patient_id) + "/" + mode + "_" + str(num)
+            if not os.path.exists(path_to_save):
+                os.makedirs(path_to_save)
+
             csv_to_save[["score", "day_index"
-                         ]].to_csv(os.path.join(parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num),
-                                                f"submissions_{datetime.today().date()}.csv"),
+                         ]].to_csv(os.path.join(path_to_save,
+                                                f"submission.csv"),
                                    index=False)
 
     return {
