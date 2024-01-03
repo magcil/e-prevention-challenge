@@ -9,7 +9,7 @@
     "time": ["cos_t", "sin_t"]
     },
     "track_id": 1,
-    "patients": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "patients": [1],
     "batch_size": 128,
     "upsampling_size": 120,
     "prediction_upsampling": 120,
@@ -19,16 +19,20 @@
 
     "patients_config": {
         "P1": {
-            "model": "AnomalyTransformer",
-            "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P1_AnomalyTransformer_2023-12-30.pt",
-            "one_class_test": false,
+            "model": "AnomalyTransformer_2",
+            "pt_file": "/Users/sofiaeleftheriou/repos/e-prevention-challenge/pretrained_models/track_1/transformers/p1_transformer_best_model.pth",
+            "svm_model": "/Users/sofiaeleftheriou/repos/e-prevention-challenge/pretrained_models/track_1/transformers/drive-download-20240103T143219Z-001/p1_svm_best_cae.pth",
+            "svm_scaler": "/Users/sofiaeleftheriou/repos/e-prevention-challenge/pretrained_models/track_1/transformers/drive-download-20240103T143219Z-001/p1_scaler_best_cae.pth",
+            "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
-            "num_layers": 12
+            "num_layers": 7
         },
         "P2": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P2_AnomalyTransformer_2023-12-30.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p2_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p2_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
@@ -37,6 +41,8 @@
         "P3": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P3_AnomalyTransformer_2023-12-30.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p3_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p3_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
@@ -45,6 +51,8 @@
         "P4": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P4_AnomalyTransformer_2023-12-30.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p4_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p4_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
@@ -53,6 +61,8 @@
         "P5": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P5_AnomalyTransformer_2023-12-30.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p5_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p5_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
@@ -61,6 +71,8 @@
         "P6": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P6_AnomalyTransformer_2023-12-30.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p6_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p6_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
@@ -69,6 +81,8 @@
         "P7": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P7_AnomalyTransformer_2023-12-31.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p7_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p7_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,
@@ -77,6 +91,8 @@
         "P8": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P8_AnomalyTransformer_2023-12-31.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p8_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p8_svm_scaler.pt",
             "one_class_test": false,
             "filter": "median",
             "filter_size": 5,
@@ -85,6 +101,8 @@
         "P9": {
             "model": "AnomalyTransformer",
             "pt_file": "pretrained_models/track_01/anomaly_transformers/Track_1_P9_AnomalyTransformer_2023-12-31.pt",
+            "svm_model": "pretrained_models/track_01/anomaly_transformers/p9_svm.pt",
+            "svm_scaler": "pretrained_models/track_01/anomaly_transformers/p9_svm_scaler.pt",
             "one_class_test": true,
             "filter": "median",
             "filter_size": 5,

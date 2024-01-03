@@ -20,7 +20,7 @@ from src.end_to_end_evaluation import get_model
 import utils.parse as parser
 from datasets.dataset import PatientDataset
 from utils.util_funcs import svm_score, fill_predictions, apply_postprocessing_filter, calculate_roc_pr_auc
-
+import pickle
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -55,12 +55,20 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
 
         # Check if one_class_test is True
         if one_class_test:
-            detector = OneClassSVM()
-            scaler = StandardScaler()
-            # Fit scaler & SVM
-            scaler.fit(train_embeddings)
-            train_embeddings = scaler.transform(train_embeddings)
-            detector.fit(train_embeddings)
+            if patient_config["svm_model"]:
+                # Load the SVM model and the scaler from files
+                with open(patient_config["svm_model"], 'rb') as svm_file:
+                    detector = pickle.load(svm_file)
+
+                with open(patient_config["svm_scaler"], 'rb') as scaler_file:
+                    scaler = pickle.load(scaler_file)
+            else:
+                detector = OneClassSVM()
+                scaler = StandardScaler()
+                # Fit scaler & SVM
+                scaler.fit(train_embeddings)
+                train_embeddings = scaler.transform(train_embeddings)
+                detector.fit(train_embeddings)
 
         else:
             mu, std = np.mean(train_losses), np.std(train_losses)
@@ -91,6 +99,7 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
         df = pd.DataFrame({"split": splits, "day_index": days, "test_loss": test_losses, "label": labels})
 
         if one_class_test:
+
             test_embeddings = scaler.transform(test_embeddings)
             preds = detector.predict(test_embeddings)
             dist_from_hyperplane = detector.decision_function(test_embeddings)
@@ -105,7 +114,8 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
             # Aggregate results for each day
             for sp in df['split_day'].unique():
                 filt_df = df[df['split_day'] == sp]
-                score = svm_score(filt_df['preds'].to_numpy(), filt_df[filt_df['dist_from_hp'] < 0]['dist_from_hp'])
+                dist_from_hp = filt_df[filt_df['preds'] == -1]["dist_from_hp"]
+                score = svm_score(filt_df['preds'].to_numpy(), dist_from_hp.abs())
                 anomaly_scores.append(score)
 
                 split.append(filt_df['split'].iloc[0])
@@ -188,7 +198,8 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
             # Aggregate results for each day
             for sp in df['split_day'].unique():
                 filt_df = df[df['split_day'] == sp]
-                score = svm_score(filt_df['preds'].to_numpy(), filt_df[filt_df['dist_from_hp'] < 0]['dist_from_hp'])
+                dist_from_hp = filt_df[filt_df['preds'] == -1]["dist_from_hp"]
+                score = svm_score(filt_df['preds'].to_numpy(), dist_from_hp.abs())
                 anomaly_scores.append(score)
 
                 split.append(filt_df['split'].iloc[0])
@@ -248,7 +259,7 @@ if __name__ == "__main__":
         model = get_model(model_str=patient_config["model"],
                           window_size=json_config["window_size"],
                           num_layers=patient_config["num_layers"])
-        model.load_state_dict(torch.load(os.path.join(PROJECT_PATH, patient_config["pt_file"])))
+        model.load_state_dict(torch.load(os.path.join(PROJECT_PATH, patient_config["pt_file"]), map_location=device))
 
         train_dset = PatientDataset(track_id=json_config["track_id"],
                                     patient_id=patient_id,
