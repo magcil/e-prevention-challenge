@@ -112,6 +112,6 @@ def svm_score(preds, dist_from_hp):
 
 def apply_postprocessing_filter(anomaly_scores, filter_type, filter_size):
     if filter_type == 'median':
-        return medfilt(anomaly_scores, filter_size)
+        return medfilt(medfilt(anomaly_scores, filter_size), 13)
     elif filter_type == 'mean':
         return np.convolve(anomaly_scores, np.ones(filter_size) / filter_size)

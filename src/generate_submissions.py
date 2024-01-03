@@ -142,7 +142,7 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
             csv_to_save['anomaly_scores_filtered'] = apply_postprocessing_filter(
                 csv_to_save['anomaly_scores'].to_numpy(), patient_config['filter'], patient_config['filter_size'])
             mode, num = sp.split("_")[0], int(sp.split("_")[1])
-            path_to_save = "val_results/track_" + track_id + "/P" + str(patient_id) + "/" + mode + "_" + str(num)
+            path_to_save = "val_results/track_" + str(track_id) + "/P" + str(patient_id) + "/" + mode + "_" + str(num)
             if not os.path.exists(path_to_save):
                 os.makedirs(path_to_save)
 
@@ -232,7 +232,7 @@ def submission_loop(track_id, patient_id, patient_config, train_dloader, val_dlo
             # Save validation results
             csv_to_save.rename(columns={"anomaly_scores": "score"}, inplace=True)
 
-            path_to_save = "final_results/track_" + track_id + "/method_" + str(json_config["method"]) + "/P" + str(patient_id) + "/" + mode + "_" + str(num)
+            path_to_save = "final_results/track_" + str(track_id) + "/method_" + str(json_config["method"]) + "/P" + str(patient_id) + "/" + mode + "_" + str(num)
             if not os.path.exists(path_to_save):
                 os.makedirs(path_to_save)
 
