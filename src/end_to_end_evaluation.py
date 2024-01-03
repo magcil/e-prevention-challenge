@@ -88,6 +88,16 @@ if __name__ == '__main__':
                                 patient_id=patient_id,
                                 mode="train",
                                 extension=json_config['file_format'])
+        # Get mu, std from whole dset and then split
+        train_dset = PatientDataset(track_id=track_id,
+                                    patient_id=patient_id,
+                                    mode="train",
+                                    window_size=window_size,
+                                    extension=json_config['file_format'],
+                                    feature_mapping=feature_mapping,
+                                    from_path=True)
+        train_dset._cal_statistics()
+        mu, std = train_dset.mean, train_dset.std
 
         X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
 
@@ -100,9 +110,7 @@ if __name__ == '__main__':
                                     patient_features=X_train,
                                     from_path=False)
 
-        # Calculate statistics (mean, std) on train and pass to other datasets
-        train_dset._cal_statistics()
-        mu, std = train_dset.mean, train_dset.std
+        train_dset.mean, train_dset.std = mu, std
 
         val_dset = PatientDataset(track_id=track_id,
                                   patient_id=patient_id,
@@ -171,12 +179,13 @@ if __name__ == '__main__':
         train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
         test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
-        val_results = validation_loop(
-            train_dset=train_dset,
-            test_dset=test_dset,
-            model=model,
-            one_class_test=json_config['patients_config'][f"P{patient_id}"]['one_class_test'],
-            device=device)
+        val_results = validation_loop(train_dset=train_dset,
+                                      test_dset=test_dset,
+                                      model=model,
+                                      one_class_test=json_config['patients_config'][f"P{patient_id}"]['one_class_test'],
+                                      device=device,
+                                      num_workers=json_config["num_workers"],
+                                      batch_size=json_config['batch_size'])
 
         results['one_class_test'].append(json_config['patients_config'][f"P{patient_id}"]['one_class_test'])
 
@@ -190,11 +199,7 @@ if __name__ == '__main__':
 
         # Write csvs with predictions
         patient_path = parser.get_path(track_id, patient_id)
-        df = pd.DataFrame({
-            "anomaly_scores": anomaly_scores,
-            "label": labels,
-            "split_day": val_results["split_days"]
-        })
+        df = pd.DataFrame({"anomaly_scores": anomaly_scores, "label": labels, "split_day": val_results["split_days"]})
         df['split'] = [x.split("_")[0] + "_" + str(x.split("_")[1]) for x in df['split_day']]
         df['day_index'] = [int(x.split("_")[3]) for x in df["split_day"]]
 
@@ -205,10 +210,10 @@ if __name__ == '__main__':
             filt_df = df[df['split'] == sp]
 
             filt_df = fill_predictions(track_id=track_id,
-                                        patient_id=patient_id,
-                                        anomaly_scores=filt_df['anomaly_scores'],
-                                        split=sp,
-                                        days=filt_df['day_index'])
+                                       patient_id=patient_id,
+                                       anomaly_scores=filt_df['anomaly_scores'],
+                                       split=sp,
+                                       days=filt_df['day_index'])
 
             path_to_save = parser.get_path(track=track_id, patient=patient_id, mode=mode, num=num)
             filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
@@ -222,14 +227,12 @@ if __name__ == '__main__':
                     filter_scores[f'median filter scores ({filter_size})'].append(median_anomaly_scores)
 
                     # Mean filter
-                    mean_anomaly_scores = np.convolve(anomaly_scores_temp,
-                                                        np.ones(filter_size) / filter_size, "same")
+                    mean_anomaly_scores = np.convolve(anomaly_scores_temp, np.ones(filter_size) / filter_size, "same")
 
                     filter_scores[f'mean filter scores ({filter_size})'].append(mean_anomaly_scores)
 
                     filt_df[f'median filter scores ({filter_size})'] = median_anomaly_scores
                     filt_df[f'mean filter scores ({filter_size})'] = mean_anomaly_scores
-
 
             filt_df.to_csv(os.path.join(path_to_save, f"results_{model_str}_{datetime.today().date()}.csv"))
 

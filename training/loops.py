@@ -86,10 +86,14 @@ def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, pati
     return best_val_loss
 
 
-def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
-    test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
-    train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
-    loss_fn = nn.MSELoss().to(device=device)
+def validation_loop(train_dset, test_dset, model, device, batch_size, num_workers, one_class_test=False):
+    test_dloader = DataLoader(test_dset, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=num_workers)
+    train_dloader = DataLoader(train_dset,
+                               batch_size=batch_size,
+                               shuffle=False,
+                               drop_last=False,
+                               num_workers=num_workers)
+
     model = model.to(device)
 
     # Check if one class SVM test is true
@@ -109,16 +113,19 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             reco_features = reco_features * mask
 
             if one_class_test:
-                train_embeddings.append(emb.cpu().numpy().flatten())
+                emb = torch.flatten(emb, start_dim=1)
+                train_embeddings.append(emb.cpu().numpy())
 
-            loss = loss_fn(features, reco_features)
-            train_losses.append(loss.item())
+            loss = (reco_features - features)**2
+            loss = np.mean(loss.cpu().numpy(), axis=(1, 2, 3))
+            train_losses.append(loss)
     # Calculate mean & std and fit Normal distribution
+    train_losses = np.concatenate(train_losses)
     mu, std = np.mean(train_losses), np.std(train_losses)
 
     # Fit One class SVM
     if one_class_test:
-        train_embeddings = np.vstack(train_embeddings)
+        train_embeddings = np.concatenate(train_embeddings)
         scaler.fit(train_embeddings)
         train_embeddings = scaler.transform(train_embeddings)
         detector.fit(train_embeddings)
@@ -135,14 +142,18 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             reco_features = reco_features * mask
 
             if one_class_test:
-                test_embeddings.append(emb.cpu().numpy().flatten())
+                emb = torch.flatten(emb, start_dim=1)
+                test_embeddings.append(emb.cpu().numpy())
 
-            loss = loss_fn(features, reco_features)
-            val_losses.append(loss.item())
-            splits.append(d['split'][0])
-            days.append(d['day_index'].item())
-            labels.append(d['label'].item())
+            loss = (features - reco_features)**2
+            loss = np.mean(loss.cpu().numpy(), axis=(1, 2, 3))
+            val_losses.append(loss)
+            splits.append(d['split'])
+            days.append(d['day_index'].numpy())
+            labels.append(d['label'].numpy())
 
+    splits, days, labels, val_losses = np.concatenate(splits), np.concatenate(days), np.concatenate(
+        labels), np.concatenate(val_losses)
     # Exract anomaly score with MSE
     if not one_class_test:
         df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "labels": labels})
@@ -161,7 +172,7 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
 
     # Else with embeddings
     else:
-        test_embeddings = scaler.transform(np.vstack(test_embeddings))
+        test_embeddings = scaler.transform(np.concatenate(test_embeddings))
 
         preds = detector.predict(test_embeddings)
         dist_from_hyperplane = np.abs(detector.decision_function(test_embeddings))
@@ -181,7 +192,7 @@ def validation_loop(train_dset, test_dset, model, device, one_class_test=False):
             df_svm_filt = df_svm[df_svm['split_day'] == s_d]
             dist_from_hp = df_svm_filt[df_svm_filt['preds'] == -1]["dist_from_hp"]
 
-            score = svm_score(df_svm_filt['preds'], dist_from_hp)
+            score = svm_score(df_svm_filt['preds'], dist_from_hp.abs())
 
             anomaly_scores.append(score)
             labels.append(df_svm_filt['label'].iloc[0])
