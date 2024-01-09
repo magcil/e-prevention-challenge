@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
+from scipy.signal import medfilt
+
 
 from utils import parse
 
@@ -16,7 +18,7 @@ def get_pos_neg_samples(track_id: int,
                         feature_names: List[str],
                         group_labels: Optional[bool] = None) -> Tuple[np.ndarray, np.ndarray]:
     """Get relapse feature and non relapse feature for a given track/patient
-    
+
     Args:
         track_id (int): Track id
         patient_id (int): Patient id
@@ -95,3 +97,23 @@ def calculate_roc_pr_auc(anomaly_scores, labels):
     fpr, tpr, _ = roc_curve(labels, anomaly_scores)
 
     return {"ROC AUC": auc(fpr, tpr), "PR AUC": auc(recall, precision)}
+
+
+
+def svm_score(preds, dist_from_hp):
+    if len(dist_from_hp) > 1:
+        min_, max_ = dist_from_hp.min(), dist_from_hp.max()
+        median = 1 if max_ == min_ else ((dist_from_hp.median() - min_) / (max_ - min_)) + 1
+    else:
+        median = 1
+    score = median * (preds[preds == -1].shape[0] / len(preds))
+
+    return min(score, 1)
+
+
+def apply_postprocessing_filter(anomaly_scores, filter_type, filter_size):
+    if filter_type == 'median':
+        return medfilt(medfilt(anomaly_scores, filter_size), 13)
+    elif filter_type == 'mean':
+        return np.convolve(anomaly_scores, np.ones(filter_size) / filter_size)
+

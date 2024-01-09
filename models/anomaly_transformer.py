@@ -234,7 +234,7 @@ def vit_small(patch_size=16, **kwargs):
 
 def vit_base(patch_size=16, **kwargs):
     model = VisionTransformer(
-        patch_size=patch_size, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4,
+        patch_size=patch_size, embed_dim=768, num_heads=12, mlp_ratio=4,
         qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     return model
 
@@ -319,7 +319,6 @@ class FullPipline(nn.Module):
 
     def forward(self, x, recons=True):
         _out = self.backbone(x)
-        #print('encoder output:', _out[0].shape)
         
         if recons==True:
             return self.head_recons(_out[0][:, :]), _out[0]

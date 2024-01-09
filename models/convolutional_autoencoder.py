@@ -5,6 +5,7 @@ import numpy as np
 
 
 # Define the autoencoder architecture
+# Define the autoencoder architecture
 class Autoencoder(nn.Module):
 
     def __init__(self):
