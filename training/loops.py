@@ -45,9 +45,7 @@ def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, pati
                 # Forward
                 org_features, mask = d["features"], d["mask"]
                 org_features, mask = org_features.to(device), mask.to(device)
-                #print('org features shape:', org_features.shape)
                 reco_features, _ = model(org_features)
-                #print('reco feats shape:', reco_features.shape)
                 reco_features = reco_features * mask
 
                 loss = loss_fn(org_features, reco_features)
@@ -153,6 +151,7 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
             reco_features, emb = model(features)
             reco_features = reco_features * mask
 
+
             train_embeddings.append(emb.cpu().numpy().flatten())
 
             loss = loss_fn(features, reco_features)
@@ -176,6 +175,7 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
             splits.append(d['split'][0])
             days.append(d['day_index'].item())
             labels.append(d['label'].item())
+
     returned = []
     for svm_test in one_class_test:
         # Fit One class SVM

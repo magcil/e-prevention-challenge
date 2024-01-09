@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 from scipy.signal import medfilt
 
+
 from utils import parse
 
 
@@ -89,7 +90,6 @@ def fill_predictions(track_id, patient_id, anomaly_scores, split, days):
     # Interpolate to fill na values
     return final_df.ffill().bfill()
 
-
 def calculate_roc_pr_auc(anomaly_scores, labels):
     # Compute metrics
     precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
@@ -97,6 +97,7 @@ def calculate_roc_pr_auc(anomaly_scores, labels):
     fpr, tpr, _ = roc_curve(labels, anomaly_scores)
 
     return {"ROC AUC": auc(fpr, tpr), "PR AUC": auc(recall, precision)}
+
 
 
 def svm_score(preds, dist_from_hp):
@@ -115,3 +116,4 @@ def apply_postprocessing_filter(anomaly_scores, filter_type, filter_size):
         return medfilt(medfilt(anomaly_scores, filter_size), 13)
     elif filter_type == 'mean':
         return np.convolve(anomaly_scores, np.ones(filter_size) / filter_size)
+

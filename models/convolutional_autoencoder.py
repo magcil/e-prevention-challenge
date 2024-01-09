@@ -57,7 +57,6 @@ class Autoencoder(nn.Module):
 
         return x, torch.flatten(emb, start_dim=1)
 
-
 class Autoencoder_2(nn.Module):
 
     def __init__(self, input_sizes=(64, 16), channel_sequence=[1, 8, 16, 32, 64]):
@@ -98,6 +97,7 @@ class Autoencoder_2(nn.Module):
         self.decoder.append(nn.ConvTranspose2d(in_channels=reversed[-2],
                                                out_channels=reversed[-1],
                                                kernel_size=(3, 3), stride=1, padding=1))
+
     def forward(self, x):
         indices_list = []
         for layer in self.encoder:
@@ -169,5 +169,6 @@ class UNet(nn.Module):
 
             concat_skip = torch.cat((skip_connection, x), dim=1)
             x = self.up_part[idx + 1](concat_skip)
+
 
         return self.output(x)

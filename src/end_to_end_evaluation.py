@@ -8,13 +8,18 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+
+from torch.optim import Adam
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from datetime import datetime
-from scipy.stats import norm
+from scipy.signal import medfilt
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
+
 
 from models.convolutional_autoencoder import Autoencoder, UNet, Autoencoder_2
 from models.anomaly_transformer import *
@@ -24,6 +29,7 @@ import utils.parse as parser
 from training.loops import autoencoder_train_loop, validation_loop
 from utils.util_funcs import fill_predictions, calculate_roc_pr_auc
 from scipy.signal import medfilt
+
 
 
 def parse_args():
@@ -49,6 +55,7 @@ def get_model(model_str, window_size, num_layers):
         student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size], depth=num_layers)
         model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     return model
+
 
 
 if __name__ == '__main__':
@@ -102,11 +109,13 @@ if __name__ == '__main__':
 
     cnt = 0
     for patient_id in tqdm(patients, desc='Evaluating on each patient', total=len(patients)):
+
         # Initialize patient's dataset and split to train/val -> Same split for each model
         X = parser.get_features(track_id=track_id,
                                 patient_id=patient_id,
                                 mode="train",
                                 extension=json_config['file_format'])
+
         X_train, X_val = train_test_split(X, test_size=1 - json_config['split_ratio'], random_state=42)
 
         train_dset = PatientDataset(track_id=track_id,
@@ -148,7 +157,9 @@ if __name__ == '__main__':
         val_dset._upsample_data(upsample_size=upsampling_size)
 
 
+
         model = get_model(model_str, window_size, num_layers[cnt])
+
 
         # Check for model transfer learning / works when only one model is given
         if "transfer_learning" in json_config.keys():
@@ -175,6 +186,7 @@ if __name__ == '__main__':
                                                     pt_file=pt_file,
                                                     device=device,
                                                     num_workers=json_config['num_workers'])
+
 
 
         # Load best model and validate
@@ -265,6 +277,7 @@ if __name__ == '__main__':
 
                 val_losses = result['scores']['val_loss'].to_numpy()
 
+
                 labels = result['scores']['label'].to_numpy()
                 anomaly_scores = result['scores']['anomaly_scores'].to_numpy()
 
@@ -310,6 +323,7 @@ if __name__ == '__main__':
             results["ROC AUC"].append(auc(fpr, tpr))
             results['PR AUC'].append(auc(recall, precision))
 
+
             #with interpolation
             if "postprocessing_filters" in json_config.keys():
                 for filter_size in json_config["postprocessing_filters"]:
@@ -329,13 +343,13 @@ if __name__ == '__main__':
             results['PR AUC interpolation'].append(auc(recall, precision))
 
             # Compute metrics for random guess
-            precision, recall, _ = precision_recall_curve(labels, anomaly_scores_random)
-            fpr, tpr, _ = roc_curve(labels, anomaly_scores_random)
-            results["ROC AUC (random)"].append(auc(fpr, tpr))
-            results['PR AUC (random)'].append(auc(recall, precision))
+            scores = calculate_roc_pr_auc(anomaly_scores_random, labels)
+            results["ROC AUC (random)"].append(scores["ROC AUC"])
+            results['PR AUC (random)'].append(scores["PR AUC"])
 
             results['Total days (non relapsed)'].append(len(labels[labels == 0]))
             results['Total days (relapsed)'].append(len(labels[labels == 1]))
+
 
 
         # Write csvs

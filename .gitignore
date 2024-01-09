@@ -162,11 +162,14 @@ cython_debug/
 *.parquet
 *.csv
 .vscode
+*.pt
+*.png
 
 *.xlsx
 
 *.npy
 
 *.pt
+
 *.pkl
 *.pth
