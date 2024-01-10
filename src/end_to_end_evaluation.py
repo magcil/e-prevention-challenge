@@ -20,8 +20,7 @@ from datetime import datetime
 from scipy.signal import medfilt
 from sklearn.metrics import precision_recall_curve, roc_curve, auc
 
-
-from models.convolutional_autoencoder import Autoencoder, UNet, Autoencoder_2
+from models.convolutional_autoencoder import Autoencoder, Autoencoder_2
 from models.anomaly_transformer import *
 from models import anomaly_transformer as vits
 from datasets.dataset import PatientDataset
@@ -29,7 +28,6 @@ import utils.parse as parser
 from training.loops import autoencoder_train_loop, validation_loop
 from utils.util_funcs import fill_predictions, calculate_roc_pr_auc
 from scipy.signal import medfilt
-
 
 
 def parse_args():
@@ -43,10 +41,8 @@ def get_model(model_str, window_size, num_layers):
     if model_str == 'Autoencoder':
         model = Autoencoder()
     elif model_str == 'Autoencoder_2':
-        num_channels = [1] + [2 ** (i + 2) for i in range(num_layers)]
+        num_channels = [1] + [2**(i + 2) for i in range(num_layers)]
         model = Autoencoder_2((window_size, 16), num_channels)
-    elif model_str == 'UNet':
-        model = UNet(in_channels=1, out_channels=1)
     elif model_str == 'AnomalyTransformer':
         print('vits dict:', vits.__dict__)
         student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size])
@@ -55,7 +51,6 @@ def get_model(model_str, window_size, num_layers):
         student = vits.__dict__['vit_base'](in_chans=1, img_size=[16, window_size], depth=num_layers)
         model = FullPipline(student, CLSHead(512, 256), RECHead(768))
     return model
-
 
 
 if __name__ == '__main__':
@@ -80,25 +75,25 @@ if __name__ == '__main__':
     # Get device
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    print('json config:', json_config['one_class_test']==True)
+    print('json config:', json_config['one_class_test'] == True)
 
     results = {
-            "Patient_id": [],
-            "Model": [],
-            "Inference Method": [],
-            "Rec Loss (train)": [],
-            "Distribution Loss (mean)": [],
-            "Distribution Loss (std)": [],
-            "ROC AUC": [],
-            "PR AUC": [],
-            "ROC AUC interpolation": [],
-            "PR AUC interpolation": [],
-            "ROC AUC (random)": [],
-            "PR AUC (random)": [],
-            "Total days on train": [],
-            "Total days (relapsed)": [],
-            "Total days (non relapsed)": [],
-            "Test metric": []
+        "Patient_id": [],
+        "Model": [],
+        "Inference Method": [],
+        "Rec Loss (train)": [],
+        "Distribution Loss (mean)": [],
+        "Distribution Loss (std)": [],
+        "ROC AUC": [],
+        "PR AUC": [],
+        "ROC AUC interpolation": [],
+        "PR AUC interpolation": [],
+        "ROC AUC (random)": [],
+        "PR AUC (random)": [],
+        "Total days on train": [],
+        "Total days (relapsed)": [],
+        "Total days (non relapsed)": [],
+        "Test metric": []
     }
     if "postprocessing_filters" in json_config.keys():
         for filter_size in json_config["postprocessing_filters"]:
@@ -156,17 +151,14 @@ if __name__ == '__main__':
         train_dset._upsample_data(upsample_size=upsampling_size)
         val_dset._upsample_data(upsample_size=upsampling_size)
 
-
-
         model = get_model(model_str, window_size, num_layers[cnt])
-
 
         # Check for model transfer learning / works when only one model is given
         if "transfer_learning" in json_config.keys():
             model.load_state_dict(torch.load(json_config["transfer_learning"]))
             print("Transfer learning from all data.")
 
-        if json_config["saved_checkpoint"][cnt]:
+        if "saved_checkpoint" in json_config.keys() and json_config["saved_checkpoint"][cnt]:
             pt_file = json_config["saved_checkpoint"][cnt]
             rec_loss_train = " "
         else:
@@ -187,8 +179,6 @@ if __name__ == '__main__':
                                                     device=device,
                                                     num_workers=json_config['num_workers'])
 
-
-
         # Load best model and validate
         model.load_state_dict(torch.load(pt_file, map_location=device))
         # Re-initialize training set to fit distribution on losses
@@ -201,16 +191,18 @@ if __name__ == '__main__':
                                     from_path=True)
         train_dset.mean, train_dset.std = mu, std
 
-
-
         # Upsample on predictions
         train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
         test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
 
-
-        val_results = validation_loop(train_dset, test_dset, model, device, test_metrics, patient_id,
-                                      one_class_test=one_class_test, path_of_pt_files=path_of_pt_files)
-
+        val_results = validation_loop(train_dset,
+                                      test_dset,
+                                      model,
+                                      device,
+                                      test_metrics,
+                                      patient_id,
+                                      one_class_test=one_class_test,
+                                      path_of_pt_files=path_of_pt_files)
 
         for i, result in enumerate(val_results):
             # Update results
@@ -223,7 +215,7 @@ if __name__ == '__main__':
             results['Total days on train'].append(len(train_dset))
             results['Model'].append(model_str)
             results['Patient_id'].append(patient_id)
-            if not('Distribution Loss (mean)' in result):
+            if not ('Distribution Loss (mean)' in result):
                 results['Test metric'].append(result["test_metric"])
                 results["Inference Method"].append("OC-SVM")
                 results["Distribution Loss (mean)"].append(" ")
@@ -259,8 +251,8 @@ if __name__ == '__main__':
                             filter_scores[f'median filter scores ({filter_size})'].append(median_anomaly_scores)
 
                             # Mean filter
-                            mean_anomaly_scores = np.convolve(anomaly_scores_temp, np.ones(filter_size) / filter_size,
-                                                              "same")
+                            mean_anomaly_scores = np.convolve(anomaly_scores_temp,
+                                                              np.ones(filter_size) / filter_size, "same")
 
                             filter_scores[f'mean filter scores ({filter_size})'].append(mean_anomaly_scores)
 
@@ -276,7 +268,6 @@ if __name__ == '__main__':
                 results["Inference Method"].append("MSE Loss")
 
                 val_losses = result['scores']['val_loss'].to_numpy()
-
 
                 labels = result['scores']['label'].to_numpy()
                 anomaly_scores = result['scores']['anomaly_scores'].to_numpy()
@@ -301,8 +292,8 @@ if __name__ == '__main__':
                             filter_scores[f'median filter scores ({filter_size})'].append(median_anomaly_scores)
 
                             # Mean filter
-                            mean_anomaly_scores = np.convolve(anomaly_scores_temp, np.ones(filter_size) / filter_size,
-                                                              "same")
+                            mean_anomaly_scores = np.convolve(anomaly_scores_temp,
+                                                              np.ones(filter_size) / filter_size, "same")
 
                             filter_scores[f'mean filter scores ({filter_size})'].append(mean_anomaly_scores)
                     filt_df.to_csv(
@@ -315,14 +306,12 @@ if __name__ == '__main__':
 
             anomaly_scores_random = np.random.random(size=len(anomaly_scores))
 
-
             # Compute metrics
             # without interpolation
             precision, recall, _ = precision_recall_curve(labels, anomaly_scores)
             fpr, tpr, _ = roc_curve(labels, anomaly_scores)
             results["ROC AUC"].append(auc(fpr, tpr))
             results['PR AUC'].append(auc(recall, precision))
-
 
             #with interpolation
             if "postprocessing_filters" in json_config.keys():
@@ -350,11 +339,8 @@ if __name__ == '__main__':
             results['Total days (non relapsed)'].append(len(labels[labels == 0]))
             results['Total days (relapsed)'].append(len(labels[labels == 1]))
 
-
-
         # Write csvs
         final_df = pd.DataFrame(results)
         final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32.csv")
-
 
         cnt += 1
