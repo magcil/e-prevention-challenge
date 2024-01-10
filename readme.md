@@ -83,6 +83,21 @@ This will output a `.pt` file in `pretrained_models` for each patient containing
 
 To generate the submissions for track 1 and evaluate the results on the validation data edit the `track_1_submission_config.json` and place the relative path for each patient's `.pt` file from step 3.3. Then run the command
 
+## 4. References
+
+Our Transformer component is based on the "SiT: Self-supervised vIsion Transformer" paper:
+>@article{atito2021sit,
+>
+>  title={SiT: Self-supervised vIsion Transformer},
+>
+>  author={Atito, Sara and Awais, Muhammad and Kittler, Josef},
+>
+>  journal={arXiv preprint arXiv:2104.03602},
+>
+>  year={2021}
+>
+>}
+
 ```bash
 python src/generate_submissions.py --config config/track_1_submission_config.json
 ```
