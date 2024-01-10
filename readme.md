@@ -89,11 +89,16 @@ python src/generate_submissions.py --config config/track_1_submission_config.jso
 
 ## 4. References
 
-Our Transformer component is based on the "SiT: Self-supervised vIsion Transformer" paper:
+Our Transformer component is based on the "SiT: Self-supervised vIsion Transformer" paper [1]. Moreover, this repo is part of our participation in the 2nd e-Prevention Signal Processing Grand Challenge [2].
 
 <a id="1">[1]</a> 
 S. Atito, M. Awais, J. Kittler (2021). 
 SiT: Self-supervised vIsion Transformer. 
 arXiv preprint arXiv:2104.03602.
+
+<a id="2">[2]</a> 
+P. P. Filntisis, N. Efthymiou, G. Retsinas, A. Zlatintsi, C. Garoufis, T. Sounapoglou, P. Tsanakas, N. Smyrnis, P. Maragos (2024). 
+“The 2nd e-prevention challenge: Psychotic and non-psychotic relapse detection using wearable-based digital phenotyping,”. 
+Proceedings of the International Conference on Acoustics, Speech and Signal Processing. IEEE, Seoul, South Korea, 2024.
 
 
