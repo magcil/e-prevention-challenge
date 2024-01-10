@@ -90,6 +90,7 @@ python src/generate_submissions.py --config config/track_1_submission_config.jso
 ## 4. References
 
 Our Transformer component is based on the "SiT: Self-supervised vIsion Transformer" paper:
+
 <a id="1">[1]</a> 
 S. Atito, M. Awais, J. Kittler (2021). 
 SiT: Self-supervised vIsion Transformer. 
