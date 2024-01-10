@@ -72,3 +72,17 @@ However, too many seperate processes might blow up your RAM due to the size of t
 
 ### 3.3 Training pipeline
 
+To start training the transformer models for each patient in track 1 run the command:
+
+```bash
+python src/end_to_end_evaluation.py --config config/track_1_end_to_end_config.json
+```
+This will output a `.pt` file in `pretrained_models` for each patient containing the respective weights of the trained transformer. Furthermore, a folder `svms` will be created containing the standard scaler and svm for each patient.
+
+### 3.4 
+
+To generate the submissions for track 1 and evaluate the results on the validation data edit the `track_1_submission_config.json` and place the relative path for each patient's `.pt` file from step 3.3. Then run the command
+
+```bash
+python src/generate_submissions.py --config config/track_1_submission_config.json
+```

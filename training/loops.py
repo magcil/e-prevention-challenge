@@ -1,6 +1,6 @@
 import os
 import sys
-
+import pickle
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 import torch
@@ -12,15 +12,12 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 from sklearn.svm import OneClassSVM
-from sklearn.covariance import EllipticEnvelope
-from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import StandardScaler
 from scipy.stats import norm
 from sklearn.metrics import accuracy_score, f1_score
 import torch.nn.functional as TF
 
 from callbacks.callbacks import EarlyStopping
-import pickle
 
 def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
                            num_workers):
@@ -191,9 +188,9 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
                 # If not, create it
                 os.makedirs(os.path.join(path_of_pt_files, "svms"))
             model_name = os.path.join(path_of_pt_files, "svms",
-                                      'p' + str(patient_id) + '_svm_best_cae.pth')
+                                      'p' + str(patient_id) + '_svm_best.pth')
             scaler_name = os.path.join(path_of_pt_files, "svms",
-                                       'p' + str(patient_id) + '_scaler_best_cae.pth')
+                                       'p' + str(patient_id) + '_scaler_best.pth')
             with open(model_name, 'wb') as file:
                 pickle.dump(detector, file)
             with open(scaler_name, 'wb') as file:

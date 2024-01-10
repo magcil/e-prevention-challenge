@@ -6,12 +6,6 @@ import json
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-
-from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
-
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -191,6 +185,8 @@ if __name__ == '__main__':
                                     from_path=True)
         train_dset.mean, train_dset.std = mu, std
 
+        results['Total days on train'].append(len(train_dset))
+
         # Upsample on predictions
         train_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
         test_dset._upsample_data(upsample_size=json_config["prediction_upsampling"])
@@ -212,7 +208,6 @@ if __name__ == '__main__':
                     filter_scores[f'median filter scores ({filter_size})'] = []
                     filter_scores[f'mean filter scores ({filter_size})'] = []
             results["Rec Loss (train)"].append(rec_loss_train)
-            results['Total days on train'].append(len(train_dset))
             results['Model'].append(model_str)
             results['Patient_id'].append(patient_id)
             if not ('Distribution Loss (mean)' in result):
@@ -341,6 +336,6 @@ if __name__ == '__main__':
 
         # Write csvs
         final_df = pd.DataFrame(results)
-        final_df.to_csv("results_" + str(datetime.today().date()) + "upsampling_120_bs128_ws32.csv")
+        final_df.to_csv("results_" + str(datetime.today().date()) + ".csv")
 
         cnt += 1
