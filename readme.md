@@ -1,17 +1,17 @@
 # e-prevention-challenge
 
-## 1. Intro
-This is [MagCIL's](http://magcil.github.io) approach for the 1st track of the "2nd e-Prevention challenge: Psychotic and Non-Psychotic Relapse Detection using Wearable-Based Digital Phenotyping". Our method ranked second with ROC-AUC = 0.651 and PR-AUC = 0.642 on the final test dataset of the challenge. 
+## Authors
+Panagiotis Kaliosis
+Sofia Eleftheriou
+Christos Nikou
+Thodoris Giannakopoulos
 
-## 2. About the method
-
-### 2.1 General
+## 1. About
 This code corresponds to [MagCIL's](http://magcil.github.io) approach for the 1st track of the "2nd e-Prevention challenge: Psychotic and Non-Psychotic Relapse Detection using Wearable-Based Digital Phenotyping". First we present our approach for preprocessing and extracting features from the wearable's raw data. We then propose a Transformer model for learning self-supervised representations from augmented features,  trained on data from non-relapse days from each of the 9 patients of the challenge. We adopt two unsupervised  methods for detecting relapse days as outliers. A separate unsupervised model is tuned for each patient using the validation data of the challenge. Our method ranked 2nd with ROC_AUC=0.651 and PR_AUC=0.642 on the final test dataset of the challenge. 
 
+## 2. Code installation and usage
 
-## 3. Code installation and usage
-
-### 3.1 Environment setup
+### 2.1 Environment setup
 
 To run the experiments and reproduce the results first create a conda environment with python 3.9 by typing
 
@@ -45,7 +45,7 @@ The place the data of the challenge inside the "data" folder of this repository 
 │   │   ├── ...
 ```   
 
-### 3.2 Feature extraction
+### 2.2 Feature extraction
 
 To extract the features from the raw data from track 1 described in the manuscript run the following command:
 
@@ -74,7 +74,7 @@ python preprocess/extract_all_features.py --track 1 --patients 5 6 7 8 9 --dtype
 ```
 However, too many seperate processes might blow up your RAM due to the size of the parquet files containing the data.
 
-### 3.3 Training pipeline
+### 2.3 Training pipeline
 
 To start training the transformer models for each patient in track 1 run the command:
 
@@ -91,7 +91,7 @@ To generate the submissions for track 1 and evaluate the results on the validati
 python src/generate_submissions.py --config config/track_1_submission_config.json
 ```
 
-## 4. References
+## 3. References
 
 Our Transformer component is based on the "SiT: Self-supervised vIsion Transformer" paper [1]. Moreover, this repo is part of our participation in the 2nd e-Prevention Signal Processing Grand Challenge [2].
 
