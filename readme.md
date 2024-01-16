@@ -5,6 +5,10 @@ This is [MagCIL's](http://magcil.github.io) approach for the 1st track of the "2
 
 ## 2. About the method
 
+### 2.1 General
+This code corresponds to [MagCIL's](http://magcil.github.io) approach for the 1st track of the "2nd e-Prevention challenge: Psychotic and Non-Psychotic Relapse Detection using Wearable-Based Digital Phenotyping". First we present our approach for preprocessing and extracting features from the wearable's raw data. We then propose a Transformer model for learning self-supervised representations from augmented features,  trained on data from non-relapse days from each of the 9 patients of the challenge. We adopt two unsupervised  methods for detecting relapse days as outliers. A separate unsupervised model is tuned for each patient using the validation data of the challenge. Our method ranked 2nd with ROC_AUC=0.651 and PR_AUC=0.642 on the final test dataset of the challenge. 
+
+
 ## 3. Code installation and usage
 
 ### 3.1 Environment setup
