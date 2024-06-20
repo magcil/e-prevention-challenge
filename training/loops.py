@@ -1,6 +1,7 @@
 import os
 import sys
 import pickle
+
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 import torch
@@ -16,8 +17,10 @@ from sklearn.preprocessing import StandardScaler
 from scipy.stats import norm
 from sklearn.metrics import accuracy_score, f1_score
 import torch.nn.functional as TF
+from pytorch_metric_learning import miners, losses, distances
 
 from callbacks.callbacks import EarlyStopping
+
 
 def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, patience, learning_rate, pt_file, device,
                            num_workers):
@@ -83,9 +86,11 @@ def autoencoder_train_loop(train_dset, val_dset, model, epochs, batch_size, pati
 
     return best_val_loss
 
+
 def sigmoid(x):
-    z = 1/(1 + np.exp(-x))
+    z = 1 / (1 + np.exp(-x))
     return z
+
 
 def normalized_aggregation(split_day, df_svm, metric, std):
     anomaly_scores, labels, split_days = [], [], []
@@ -99,13 +104,15 @@ def normalized_aggregation(split_day, df_svm, metric, std):
         elif metric == "percentile":
             score = np.percentile(df_svm_filt["dist_from_hp"], 90)
         elif metric == "percentile_hard_decision":
-            score = np.percentile(df_svm_filt["dist_from_hp"], 90) * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
+            score = np.percentile(df_svm_filt["dist_from_hp"],
+                                  90) * (df_svm_filt[df_svm_filt['preds'] == -1].shape[0] / df_svm_filt.shape[0])
         if score > 1:
             score = 1
         anomaly_scores.append(score)
         labels.append(df_svm_filt['label'].iloc[0])
         split_days.append(s_d)
     return anomaly_scores, labels, split_days
+
 
 def weighted_hard_decision(split_day, df_svm):
     anomaly_scores, labels, split_days = [], [], []
@@ -130,8 +137,14 @@ def weighted_hard_decision(split_day, df_svm):
     return anomaly_scores, labels, split_days
 
 
-def validation_loop(train_dset, test_dset, model, device, test_metrics,
-                    patient_id, one_class_test=False, path_of_pt_files=None):
+def validation_loop(train_dset,
+                    test_dset,
+                    model,
+                    device,
+                    test_metrics,
+                    patient_id,
+                    one_class_test=False,
+                    path_of_pt_files=None):
     test_dloader = DataLoader(test_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     train_dloader = DataLoader(train_dset, batch_size=1, shuffle=False, drop_last=False, num_workers=1)
     loss_fn = nn.MSELoss().to(device=device)
@@ -147,7 +160,6 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
             features, mask = features.to(device), mask.to(device)
             reco_features, emb = model(features)
             reco_features = reco_features * mask
-
 
             train_embeddings.append(emb.cpu().numpy().flatten())
 
@@ -187,10 +199,8 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
             if not os.path.exists(os.path.join(path_of_pt_files, "svms")):
                 # If not, create it
                 os.makedirs(os.path.join(path_of_pt_files, "svms"))
-            model_name = os.path.join(path_of_pt_files, "svms",
-                                      'p' + str(patient_id) + '_svm_best.pth')
-            scaler_name = os.path.join(path_of_pt_files, "svms",
-                                       'p' + str(patient_id) + '_scaler_best.pth')
+            model_name = os.path.join(path_of_pt_files, "svms", 'p' + str(patient_id) + '_svm_best.pth')
+            scaler_name = os.path.join(path_of_pt_files, "svms", 'p' + str(patient_id) + '_scaler_best.pth')
             with open(model_name, 'wb') as file:
                 pickle.dump(detector, file)
             with open(scaler_name, 'wb') as file:
@@ -205,7 +215,8 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
                 "split_day": split_day,
                 "label": labels,
                 "preds": preds,
-                "dist_from_hp": dist_from_hyperplane})
+                "dist_from_hp": dist_from_hyperplane
+            })
 
             std = np.std(df_svm["dist_from_hp"])
             for test_metric in test_metrics:
@@ -219,7 +230,8 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
                     "anomaly_scores": np.array(anomaly_scores),
                     "labels": np.array(labels, dtype=np.int64),
                     "split_days": split_days,
-                    "test_metric": test_metric})
+                    "test_metric": test_metric
+                })
         # Exract anomaly score with MSE
         else:
             df = pd.DataFrame({"split": splits, "day_index": days, "val_loss": val_losses, "label": labels})
@@ -229,11 +241,13 @@ def validation_loop(train_dset, test_dset, model, device, test_metrics,
             res['anomaly_scores_random'] = np.random.random(size=res.shape[0])
 
             unique_splits = np.unique(splits).tolist()
-            returned.append({"scores": res,
-                             "Distribution Loss (mean)": mu,
-                             "Distribution Loss (std)": std,
-                             "split": unique_splits,
-                             "test_metric": "mse probability"})
+            returned.append({
+                "scores": res,
+                "Distribution Loss (mean)": mu,
+                "Distribution Loss (std)": std,
+                "split": unique_splits,
+                "test_metric": "mse probability"
+            })
     return returned
 
 
@@ -392,3 +406,63 @@ def validate_classification(train_dset, val_dset, model, batch_size, device, num
         "anomaly_scores_svm": f_anomalies,
         "label": f_labels
     })
+
+
+def contrastive_training_loop(model, train_dset, val_dset, epochs, batch_size, learning_rate, patience, pt_file,
+                              device, num_workers):
+    train_dloader = DataLoader(train_dset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    val_dloader = DataLoader(val_dset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    model = model.to(device)
+
+    optim = Adam(model.parameters(), lr=learning_rate, weight_decay=1e-3)
+    lr_scheduler = CosineAnnealingLR(optimizer=optim, T_max=epochs, eta_min=1e-6)
+    ear_stopping = EarlyStopping(patience=patience, verbose=True, path=pt_file)
+
+    distance = distances.LpDistance(normalize_embeddings=True)
+    loss_func = losses.AngularLoss(distance=distance)
+    miner = miners.AngularMiner(angle=20, distance=distance)
+    valid_miner = miners.AngularMiner(angle=0, distance=distance)
+    loss_func = loss_func.to(device)
+
+    train_loss, val_loss = 0., 0.
+    _padding = len(str(epochs + 1))
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        with tqdm(train_dloader, unit='batch', leave=False, desc='Training set') as tbatch:
+            for data in tbatch:
+                features, labels = data['features'], data['patient_id'] - 1
+                features, labels = features.to(device), labels.to(device)
+
+                embeddings = model(features)
+                triplets = miner(embeddings, labels)
+                loss = loss_func(embeddings, labels, triplets)
+                train_loss += loss.item()
+
+                optim.zero_grad()
+                loss.backward()
+                optim.step()
+
+            train_loss /= len(train_dloader)
+            lr_scheduler.step()
+
+        model.eval()
+        with torch.no_grad():
+            with tqdm(val_dloader, unit='batch', leave=False, desc='Validation set') as vbatch:
+                for data in vbatch:
+                    features, labels = data['features'], data['patient_id'] - 1
+                    features, labels = features.to(device), labels.to(device)
+
+                    embeddings = model(features)
+                    triplets = valid_miner(embeddings, labels)
+                    loss = loss_func(embeddings, labels, triplets)
+                    val_loss += loss.item()
+            val_loss /= len(val_dloader)
+
+        print(f"Epoch {epoch:<{_padding}}/{epochs}. Train Loss: {train_loss:.3f}. Val Loss: {val_loss:.3f}")
+        ear_stopping(val_loss, model, epoch)
+
+        if ear_stopping.early_stop:
+            print("Early Stopping.")
+            break
+        train_loss, val_loss = 0.0, 0.0
