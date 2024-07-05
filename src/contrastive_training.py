@@ -35,7 +35,7 @@ if __name__ == "__main__":
                                                     feature_mapping=json_config['feature_mapping'],
                                                     upsampling_size=json_config['upsampling_size'])
 
-    model = SimpleCNN()
+    model = SimpleCNN(channel_sequence=json_config['channel_sequence'])
     pt_file = os.path.join(PROJECT_PATH, "pretrained_models", json_config["pt_file"])
 
     contrastive_training_loop(model=model,
